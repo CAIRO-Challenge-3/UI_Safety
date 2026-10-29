@@ -1,0 +1,399 @@
+{
+ "imgsz": 224,
+ "names": [
+  "helmet",
+  "face"
+ ],
+ "reg_max": 1,
+ "head": [
+  {
+   "stride": 8,
+   "box": "/model.23/cv2.0/cv2.0.2/Conv_output_0",
+   "cls": "/model.23/cv3.0/cv3.0.2/Conv_output_0"
+  },
+  {
+   "stride": 16,
+   "box": "/model.23/cv2.1/cv2.1.2/Conv_output_0",
+   "cls": "/model.23/cv3.1/cv3.1.2/Conv_output_0"
+  },
+  {
+   "stride": 32,
+   "box": "/model.23/cv2.2/cv2.2.2/Conv_output_0",
+   "cls": "/model.23/cv3.2/cv3.2.2/Conv_output_0"
+  }
+ ],
+ "steps": [
+  {
+   "kind": "opencv",
+   "inputs": [
+    "images"
+   ],
+   "outputs": [
+    "/model.4/cv2/act/Mul_output_0",
+    "/model.6/cv2/act/Mul_output_0",
+    "/model.10/Split_output_0",
+    "/model.10/Split_output_1",
+    "/model.10/m/m.0/attn/Reshape_output_0"
+   ],
+   "file": "seg0.onnx",
+   "forward": [
+    "/model.4/cv2/act/Mul_output_0",
+    "/model.6/cv2/act/Mul_output_0",
+    "/model.10/Split_output_0",
+    "/model.10/Split_output_1__out",
+    "/model.10/m/m.0/attn/Reshape_output_0"
+   ]
+  },
+  {
+   "kind": "numpy",
+   "ops": [
+    {
+     "op": "Split",
+     "inputs": [
+      "/model.10/m/m.0/attn/Reshape_output_0"
+     ],
+     "outputs": [
+      "/model.10/m/m.0/attn/Split_output_0",
+      "/model.10/m/m.0/attn/Split_output_1",
+      "/model.10/m/m.0/attn/Split_output_2"
+     ],
+     "attrs": {
+      "axis": 2,
+      "split": [
+       32,
+       32,
+       64
+      ]
+     },
+     "consts": {}
+    },
+    {
+     "op": "Mul",
+     "inputs": [
+      "/model.10/m/m.0/attn/Split_output_0",
+      "/model.10/m/m.0/attn/Constant_1_output_0"
+     ],
+     "outputs": [
+      "/model.10/m/m.0/attn/Mul_output_0"
+     ],
+     "attrs": {},
+     "consts": {
+      "/model.10/m/m.0/attn/Constant_1_output_0": 0.1767766922712326
+     }
+    },
+    {
+     "op": "Reshape",
+     "inputs": [
+      "/model.10/m/m.0/attn/Split_output_2",
+      "/model.10/m/m.0/attn/Constant_3_output_0"
+     ],
+     "outputs": [
+      "/model.10/m/m.0/attn/Reshape_2_output_0"
+     ],
+     "attrs": {},
+     "consts": {
+      "/model.10/m/m.0/attn/Constant_3_output_0": [
+       1,
+       256,
+       7,
+       7
+      ]
+     }
+    },
+    {
+     "op": "Transpose",
+     "inputs": [
+      "/model.10/m/m.0/attn/Mul_output_0"
+     ],
+     "outputs": [
+      "/model.10/m/m.0/attn/Transpose_output_0"
+     ],
+     "attrs": {
+      "perm": [
+       0,
+       1,
+       3,
+       2
+      ]
+     },
+     "consts": {}
+    },
+    {
+     "op": "MatMul",
+     "inputs": [
+      "/model.10/m/m.0/attn/Transpose_output_0",
+      "/model.10/m/m.0/attn/Split_output_1"
+     ],
+     "outputs": [
+      "/model.10/m/m.0/attn/MatMul_output_0"
+     ],
+     "attrs": {},
+     "consts": {}
+    },
+    {
+     "op": "Softmax",
+     "inputs": [
+      "/model.10/m/m.0/attn/MatMul_output_0"
+     ],
+     "outputs": [
+      "/model.10/m/m.0/attn/Softmax_output_0"
+     ],
+     "attrs": {
+      "axis": 3
+     },
+     "consts": {}
+    },
+    {
+     "op": "Transpose",
+     "inputs": [
+      "/model.10/m/m.0/attn/Softmax_output_0"
+     ],
+     "outputs": [
+      "/model.10/m/m.0/attn/Transpose_1_output_0"
+     ],
+     "attrs": {
+      "perm": [
+       0,
+       1,
+       3,
+       2
+      ]
+     },
+     "consts": {}
+    },
+    {
+     "op": "MatMul",
+     "inputs": [
+      "/model.10/m/m.0/attn/Split_output_2",
+      "/model.10/m/m.0/attn/Transpose_1_output_0"
+     ],
+     "outputs": [
+      "/model.10/m/m.0/attn/MatMul_1_output_0"
+     ],
+     "attrs": {},
+     "consts": {}
+    },
+    {
+     "op": "Reshape",
+     "inputs": [
+      "/model.10/m/m.0/attn/MatMul_1_output_0",
+      "/model.10/m/m.0/attn/Constant_3_output_0"
+     ],
+     "outputs": [
+      "/model.10/m/m.0/attn/Reshape_1_output_0"
+     ],
+     "attrs": {},
+     "consts": {
+      "/model.10/m/m.0/attn/Constant_3_output_0": [
+       1,
+       256,
+       7,
+       7
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "kind": "opencv",
+   "inputs": [
+    "/model.10/m/m.0/attn/Reshape_2_output_0",
+    "/model.10/m/m.0/attn/Reshape_1_output_0",
+    "/model.10/Split_output_1",
+    "/model.10/Split_output_0",
+    "/model.6/cv2/act/Mul_output_0",
+    "/model.4/cv2/act/Mul_output_0"
+   ],
+   "outputs": [
+    "/model.23/cv2.0/cv2.0.2/Conv_output_0",
+    "/model.23/cv3.0/cv3.0.2/Conv_output_0",
+    "/model.23/cv2.1/cv2.1.2/Conv_output_0",
+    "/model.22/Split_output_0",
+    "/model.22/Split_output_1",
+    "/model.23/cv3.1/cv3.1.2/Conv_output_0",
+    "/model.22/m.0/m.0.0/Add_output_0",
+    "/model.22/m.0/m.0.1/attn/Reshape_output_0"
+   ],
+   "file": "seg1.onnx",
+   "forward": [
+    "/model.23/cv2.0/cv2.0.2/Conv_output_0",
+    "/model.23/cv3.0/cv3.0.2/Conv_output_0",
+    "/model.23/cv2.1/cv2.1.2/Conv_output_0",
+    "/model.22/Split_output_0",
+    "/model.22/Split_output_1__out",
+    "/model.23/cv3.1/cv3.1.2/Conv_output_0",
+    "/model.22/m.0/m.0.0/Add_output_0",
+    "/model.22/m.0/m.0.1/attn/Reshape_output_0"
+   ]
+  },
+  {
+   "kind": "numpy",
+   "ops": [
+    {
+     "op": "Split",
+     "inputs": [
+      "/model.22/m.0/m.0.1/attn/Reshape_output_0"
+     ],
+     "outputs": [
+      "/model.22/m.0/m.0.1/attn/Split_output_0",
+      "/model.22/m.0/m.0.1/attn/Split_output_1",
+      "/model.22/m.0/m.0.1/attn/Split_output_2"
+     ],
+     "attrs": {
+      "axis": 2,
+      "split": [
+       32,
+       32,
+       64
+      ]
+     },
+     "consts": {}
+    },
+    {
+     "op": "Mul",
+     "inputs": [
+      "/model.22/m.0/m.0.1/attn/Split_output_0",
+      "/model.10/m/m.0/attn/Constant_1_output_0"
+     ],
+     "outputs": [
+      "/model.22/m.0/m.0.1/attn/Mul_output_0"
+     ],
+     "attrs": {},
+     "consts": {
+      "/model.10/m/m.0/attn/Constant_1_output_0": 0.1767766922712326
+     }
+    },
+    {
+     "op": "Reshape",
+     "inputs": [
+      "/model.22/m.0/m.0.1/attn/Split_output_2",
+      "/model.10/m/m.0/attn/Constant_3_output_0"
+     ],
+     "outputs": [
+      "/model.22/m.0/m.0.1/attn/Reshape_2_output_0"
+     ],
+     "attrs": {},
+     "consts": {
+      "/model.10/m/m.0/attn/Constant_3_output_0": [
+       1,
+       256,
+       7,
+       7
+      ]
+     }
+    },
+    {
+     "op": "Transpose",
+     "inputs": [
+      "/model.22/m.0/m.0.1/attn/Mul_output_0"
+     ],
+     "outputs": [
+      "/model.22/m.0/m.0.1/attn/Transpose_output_0"
+     ],
+     "attrs": {
+      "perm": [
+       0,
+       1,
+       3,
+       2
+      ]
+     },
+     "consts": {}
+    },
+    {
+     "op": "MatMul",
+     "inputs": [
+      "/model.22/m.0/m.0.1/attn/Transpose_output_0",
+      "/model.22/m.0/m.0.1/attn/Split_output_1"
+     ],
+     "outputs": [
+      "/model.22/m.0/m.0.1/attn/MatMul_output_0"
+     ],
+     "attrs": {},
+     "consts": {}
+    },
+    {
+     "op": "Softmax",
+     "inputs": [
+      "/model.22/m.0/m.0.1/attn/MatMul_output_0"
+     ],
+     "outputs": [
+      "/model.22/m.0/m.0.1/attn/Softmax_output_0"
+     ],
+     "attrs": {
+      "axis": 3
+     },
+     "consts": {}
+    },
+    {
+     "op": "Transpose",
+     "inputs": [
+      "/model.22/m.0/m.0.1/attn/Softmax_output_0"
+     ],
+     "outputs": [
+      "/model.22/m.0/m.0.1/attn/Transpose_1_output_0"
+     ],
+     "attrs": {
+      "perm": [
+       0,
+       1,
+       3,
+       2
+      ]
+     },
+     "consts": {}
+    },
+    {
+     "op": "MatMul",
+     "inputs": [
+      "/model.22/m.0/m.0.1/attn/Split_output_2",
+      "/model.22/m.0/m.0.1/attn/Transpose_1_output_0"
+     ],
+     "outputs": [
+      "/model.22/m.0/m.0.1/attn/MatMul_1_output_0"
+     ],
+     "attrs": {},
+     "consts": {}
+    },
+    {
+     "op": "Reshape",
+     "inputs": [
+      "/model.22/m.0/m.0.1/attn/MatMul_1_output_0",
+      "/model.10/m/m.0/attn/Constant_3_output_0"
+     ],
+     "outputs": [
+      "/model.22/m.0/m.0.1/attn/Reshape_1_output_0"
+     ],
+     "attrs": {},
+     "consts": {
+      "/model.10/m/m.0/attn/Constant_3_output_0": [
+       1,
+       256,
+       7,
+       7
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "kind": "opencv",
+   "inputs": [
+    "/model.22/m.0/m.0.1/attn/Reshape_2_output_0",
+    "/model.22/m.0/m.0.1/attn/Reshape_1_output_0",
+    "/model.22/m.0/m.0.0/Add_output_0",
+    "/model.22/Split_output_0",
+    "/model.22/Split_output_1"
+   ],
+   "outputs": [
+    "/model.23/cv2.2/cv2.2.2/Conv_output_0",
+    "/model.23/cv3.2/cv3.2.2/Conv_output_0"
+   ],
+   "file": "seg2.onnx",
+   "forward": [
+    "/model.23/cv2.2/cv2.2.2/Conv_output_0",
+    "/model.23/cv3.2/cv3.2.2/Conv_output_0"
+   ]
+  }
+ ]
+}
