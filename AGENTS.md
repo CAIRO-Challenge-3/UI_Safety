@@ -23,7 +23,12 @@ pepper_ppe_ui/
   README.md            flow, deploy steps, backend HTTP contract
   html/index.html      the whole tablet app (HTML + CSS + JS in one file)
   html/navigation.html standalone directions page (map + moving arrows); NOT part of the PPE flow
+  html/room.html       room assistant, one URL per room: room.html?room=werkstatt-1|werkstatt-2|speisesaal|sanitaer
+                       (pictograms by colour, safety rules, daily plan + lunch reminder, emergency escape map,
+                       call a helper). Its "Sicherheits-Check" tile only LINKS to index.html.
 ```
+
+The repo is `CAIRO-Challenge-3/UI_Safety` (`main`). The backend prototypes are on branch `feat/safety-face-detection`.
 
 ## Hard rules
 

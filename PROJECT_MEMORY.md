@@ -70,6 +70,27 @@ Running log so any AI or person can pick up where we left off. Newest entries go
 
 ## Change log
 
+### 2026-10-29: room assistant, round 2 (user feedback)
+- **Safety check now runs inside room.html** (same app). Screens `sc-*`: position (live view, recognise, 3‑2‑1 photo) → pass / missing / still-missing + helper → "Nächste Person" returns to the **room home**. The pipeline, texts and look are copied 1:1 from `index.html`, with CSS scoped under `.sc`. A small "Zurück" button was added on the positioning screen. It shares the `pepper-ppe-pending` memory with `index.html`. **`index.html` and `navigation.html` are not changed** (verified against `ui-v1.0`).
+- **Real safety-sign images, not restyled:** `assets/signs/*.svg` are the official ISO 7010 graphics from Wikimedia Commons: W012 voltage, W017 hot, M009 gloves, M004 goggles, M011 wash, M030 trash, E001 exit, E003 first aid, E010 AED, E007 assembly point, F001 extinguisher. The requirements PDF with the user's own images is **not on disk**. If their images differ, drop them in with the same file names.
+- **Escape map is now the original site plan.** `assets/lageplan.jpg` was extracted from `Downloads/Layout-plan-of-a-workshop.pdf` (1024×1024, German version). The route, current-room box, "Du bist hier" and the E007 assembly-point sign are drawn on top in the image's pixel coordinates, with moving green arrows. Routes were checked by drawing them onto the plan: the west doors of WB1/WB2 are at y≈380/440, and sanitary goes corridor → foyer door (y≈575) → main entrance. The assembly point is at the end of the front walkway by the street, which is an **assumption** because the plan has none.
+- **Read-aloud now stops** on every screen change, when the sign popup is closed, and when the lunch reminder is dismissed (`stopSpeech()`: `ALTextToSpeech.stopAll()` / `speechSynthesis.cancel()`).
+
+### 2026-10-29: room assistant UI (new file, safety check untouched)
+- New `pepper_ppe_ui/html/room.html`, built from the user's "New UI design requirements" PDF and the site plan (Werkstatt für Menschen mit Behinderung, ground floor).
+- One file with one address per room (`?room=werkstatt-1|werkstatt-2|speisesaal|sanitaer`). Screens:
+  - launch page with only the Start button
+  - room home laid out like the wireframe: time & date + room name header, "Hilfe rufen" top-left, "Notausgang" top-right, 2×2 tiles (Piktogramme, Sicherheits-Check, Sicherheits-Regeln, Tagesplan)
+- **Piktogramme:** 4 colours (blue = must, red = forbidden/fire, green = escape/first aid, yellow = warning), then that room's signs, then a text popup that reads aloud. "Schließen" goes back to the room home (as the spec says). Colours with no signs in the room are greyed out.
+- **Sign texts** are taken from the PDF. Small grammar fixes: "kann *ein* schlimmer Unfall", "*Legen* Sie Ihre Hand nicht…", "*Wirf* deinen Müll…". First aid and the defibrillator are split into two signs. The PDF mixes "du" and "Sie"; that's left as given (open question).
+- **Sicherheits-Check** tile is a plain link to `index.html`. The safety check itself is unchanged (still `ui-v1.0`).
+- **Tagesplan:** example day per room, with the current block highlighted and a lunch banner ("noch 1 Std. 20 Min."). A lunch reminder pops up (and is spoken) 10 min before lunch.
+- **Notausgang:** schematic ground-floor map redrawn from the site plan, with the current room highlighted, "Du bist hier", green moving arrows to the assembly point, and 4 easy-language steps, spoken automatically.
+- **Hilfe rufen:** raises `Room/HelpRequested`, POSTs `/help` `{room, reason:'assistant', lang}`, and shows "Maria kommt gleich!".
+- **Language:** DE default, with the same shared `pepper-ppe-lang` key as the safety check, so the choice carries over between the two.
+- **Example content to replace with real data:** daily plans, safety rules, lunch times, and the escape routes and assembly point. **The escape routes are assumptions** from the sample plan and must be checked against the official Flucht- und Rettungsplan.
+- **Known bug found in frozen `index.html`, not fixed:** it has no `[hidden]{display:none!important}` rule. On the real tablet, the "Moment…" overlay and the "Nächste Person" button on the still-missing page would show while they're supposed to be hidden. The artifact previews hide the bug because the preview page adds that rule. Needs the user's OK to patch.
+
 ### 2026-10-29: UI frozen as v1.0
 - The user confirmed the safety check UI pipeline is right. It's committed and tagged `ui-v1.0`. From here on the work is the backend.
 

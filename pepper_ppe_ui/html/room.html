@@ -1,0 +1,1432 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Pepper Raum-Assistent</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Nunito:wght@400;700;800&display=swap">
+<style>
+/* Room assistant for Pepper's tablet in a workshop for people with disabilities.
+   One file serves every room: room.html?room=werkstatt-1 | werkstatt-2 | speisesaal | sanitaer
+   The PPE safety check runs inside this app (same pipeline as index.html, which stays untouched).
+   Layout: fixed 1280x800 stage, scaled to fit. Header = time & date + room name (wireframe).
+   UI chrome uses the safety-check design language: sky #EEF5FF · card #FFFFFF · ink #23305A · soft ink #6B7799
+   coral #FF7A59 · blue #4C8DFF · mint #2BC48A · sunny #FFB938 · lavender #8E7CFF.
+   Safety signs are the official ISO 7010 images (assets/signs) and the escape map is the original
+   site plan (assets/lageplan.jpg) – neither is restyled.
+   Old tablet WebView: ES5, no CSS variables, no grid, no flex gap. */
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; }
+body { background: #DDE8F7; color: #23305A; font-family: Nunito, Roboto, 'Segoe UI', Arial, sans-serif; -webkit-user-select: none; user-select: none; }
+.display { font-family: 'Baloo 2', Nunito, 'Arial Rounded MT Bold', sans-serif; }
+img { -webkit-user-drag: none; }
+
+/* ---------- demo shell (browser only) ---------- */
+.demo-wrap {
+  display: flex; align-items: flex-start; padding-top: 24px; padding-bottom: 24px;
+  padding-left: 16px; padding-right: 16px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+#stage-holder { flex: 1; min-width: 0; position: relative; overflow: hidden; border-radius: 26px; margin: 12px; box-shadow: 0 0 0 12px #FFFFFF, 0 24px 60px rgba(35,48,90,.18); }
+#stage {
+  position: absolute; top: 0; left: 0; width: 1280px; height: 800px; overflow: hidden; transform-origin: 0 0;
+  background: #EEF5FF;
+  background-image: radial-gradient(circle at 8% 12%, #FFE9DF 0, rgba(255,233,223,0) 300px),
+                    radial-gradient(circle at 95% 90%, #E2F7EE 0, rgba(226,247,238,0) 360px),
+                    radial-gradient(circle at 80% 8%, #ECE8FF 0, rgba(236,232,255,0) 260px);
+}
+.panel { width: 300px; flex-shrink: 0; margin-left: 24px; padding: 20px; background: #FFFFFF; border-radius: 20px; font-size: 14px; color: #3B4770; box-shadow: 0 10px 30px rgba(35,48,90,.08); }
+.panel h2 { margin: 0; font-family: 'Baloo 2', Nunito, sans-serif; font-size: 24px; color: #23305A; }
+.panel h3 { margin: 18px 0 8px; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: #6B7799; }
+.panel .note { margin: 4px 0 0; line-height: 1.45; color: #6B7799; }
+.panel select { width: 100%; padding: 9px 10px; background: #F4F8FF; color: #23305A; border: 2px solid #DCE5F3; border-radius: 12px; font: inherit; }
+.pbtn { display: block; width: 100%; text-align: left; margin-bottom: 6px; padding: 10px 12px; background: #F4F8FF; color: #23305A; border: 2px solid #F4F8FF; border-radius: 14px; font: 700 14px Nunito, sans-serif; cursor: pointer; }
+.pbtn:hover { border-color: #DCE5F3; }
+.pbtn.small { display: inline-block; width: auto; padding: 6px 12px; margin: 8px 0 0; }
+.det { width: 100%; border-collapse: collapse; }
+.det th { font-size: 12px; font-weight: 800; color: #6B7799; text-align: center; padding: 4px; }
+.det th:first-child, .det td:first-child { text-align: left; }
+.det td { padding: 5px 4px; border-top: 1px solid #E8EEF8; text-align: center; }
+.det input { width: 18px; height: 18px; accent-color: #2BC48A; }
+.memory { margin: 0; padding: 10px 12px; background: #F4F8FF; border-radius: 12px; line-height: 1.5; }
+.voice { display: flex; align-items: center; margin-top: 16px; }
+.voice input { margin: 0 8px 0 0; width: 18px; height: 18px; accent-color: #FF7A59; }
+.panel button:focus-visible, .panel select:focus-visible, .panel input:focus-visible { outline: 3px solid #4C8DFF; outline-offset: 2px; }
+@media (max-width: 900px) {
+  .demo-wrap { flex-direction: column; align-items: stretch; }
+  .panel { width: auto; margin: 20px 0 0; }
+  #stage-holder { border-radius: 14px; box-shadow: 0 0 0 6px #FFFFFF; margin: 6px; }
+}
+body.kiosk { background: #EEF5FF; overflow: hidden; }
+body.kiosk .demo-wrap { padding: 0; }
+body.kiosk .panel { display: none; }
+body.kiosk #stage-holder { margin: 0; border-radius: 0; box-shadow: none; }
+
+/* ---------- header: time & date · room name · language ---------- */
+.top { position: absolute; top: 0; left: 0; right: 0; height: 92px; display: flex; align-items: center; padding: 0 28px; z-index: 4; }
+.top-inner { flex: 1; display: flex; align-items: center; height: 72px; padding: 0 28px; background: #FFFFFF; border-radius: 36px; box-shadow: 0 6px 18px rgba(35,48,90,.07); }
+.clock { font-size: 34px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.date { margin-left: 14px; font-size: 20px; font-weight: 700; color: #6B7799; }
+.room-name { flex: 1; text-align: center; font-size: 34px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 20px; }
+.lang { display: flex; padding: 4px; border-radius: 999px; background: #EEF5FF; }
+.lang button { min-width: 62px; height: 46px; border: 0; border-radius: 999px; background: transparent; color: #6B7799; font: 800 20px Nunito, sans-serif; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.lang button.on { background: #4C8DFF; color: #FFFFFF; }
+.lang button:focus-visible { outline: 3px solid #FF7A59; outline-offset: 2px; }
+.lang-float { position: absolute; top: 24px; right: 28px; z-index: 6; background: #FFFFFF; box-shadow: 0 4px 12px rgba(35,48,90,.08); }
+
+.screen { position: absolute; top: 92px; left: 0; right: 0; bottom: 0; padding: 16px 48px 32px; display: none; }
+.screen.full { top: 0; }
+.screen.on { display: block; animation: enter .4s cubic-bezier(.2,1.4,.4,1); }
+@keyframes enter { from { opacity: 0; transform: translateY(20px) scale(.98); } to { opacity: 1; transform: none; } }
+.fill { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center; }
+.row { display: flex; align-items: center; }
+
+/* ---------- buttons ---------- */
+.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 88px; padding: 0 44px; border: 0; border-radius: 999px; cursor: pointer; vertical-align: middle; text-decoration: none;
+  font: 800 30px Nunito, Roboto, sans-serif; color: #FFFFFF; background: #FF7A59; box-shadow: 0 7px 0 #E25A3A; position: relative; top: 0; -webkit-tap-highlight-color: transparent; }
+.btn:active { top: 5px; box-shadow: 0 2px 0 #E25A3A; }
+.btn:focus-visible { outline: 4px solid #4C8DFF; outline-offset: 6px; }
+.btn-soft { background: #FFFFFF; color: #23305A; box-shadow: 0 7px 0 #D3DEEF; }
+.btn-soft:active { box-shadow: 0 2px 0 #D3DEEF; }
+.btn-green { background: #1F9D55; box-shadow: 0 7px 0 #167A41; }
+.btn-green:active { box-shadow: 0 2px 0 #167A41; }
+.btn-lav { background: #8E7CFF; box-shadow: 0 7px 0 #6C59E6; }
+.btn-lav:active { box-shadow: 0 2px 0 #6C59E6; }
+.btn + .btn { margin-left: 18px; }
+.btn svg { width: 40px; height: 40px; margin-right: 14px; }
+.btn-start { min-height: 170px; padding: 0 90px; font-size: 54px; box-shadow: 0 10px 0 #E25A3A, 0 24px 50px rgba(255,122,89,.35); animation: breathe 2.8s ease-in-out infinite; }
+.btn-start:active { top: 7px; box-shadow: 0 3px 0 #E25A3A; }
+.btn-start svg { width: 64px; height: 64px; margin-right: 22px; }
+@keyframes breathe { 50% { transform: scale(1.04); } }
+.btn-next { min-width: 420px; font-variant-numeric: tabular-nums; }
+.btn-next b { display: inline-block; margin-left: 14px; padding: 2px 14px; border-radius: 999px; background: rgba(255,255,255,.25); font-size: 26px; }
+.btn-soft.btn-next b { background: #EEF5FF; }
+
+/* sub-page title row: big back button + title */
+.bar { display: flex; align-items: center; height: 96px; }
+.back { min-height: 80px; padding: 0 30px 0 22px; font-size: 26px; }
+.back svg { width: 34px; height: 34px; margin-right: 10px; }
+.bar h1 { flex: 1; margin: 0 0 0 26px; font-size: 46px; font-weight: 800; line-height: 1.05; }
+.speak-btn { min-height: 80px; padding: 0 28px 0 22px; font-size: 26px; }
+
+/* ---------- room home (wireframe) ---------- */
+.home { position: relative; height: 100%; }
+.round { position: absolute; top: 6px; width: 190px; text-align: center; background: none; border: 0; padding: 0; cursor: pointer; color: #23305A; font: 800 24px Nunito, sans-serif; -webkit-tap-highlight-color: transparent; }
+.round .disc { display: block; width: 150px; height: 150px; margin: 0 auto 10px; border-radius: 50%; position: relative; top: 0; overflow: hidden; }
+.round .disc svg, .round .disc img { width: 100%; height: 100%; display: block; }
+.round:active .disc { top: 5px; }
+.round:focus-visible .disc { outline: 4px solid #4C8DFF; outline-offset: 6px; }
+.round-help { left: 0; }
+.round-help .disc { background: #8E7CFF; box-shadow: 0 8px 0 #6C59E6; }
+.round-exit { right: 0; }
+.round-exit .disc { display: flex; align-items: center; justify-content: center; background: #FFFFFF; box-shadow: 0 8px 0 #167A41, inset 0 0 0 6px #1F9D55; }
+.round-exit .disc img { width: 78%; height: 78%; object-fit: contain; }
+.tiles { position: absolute; left: 50%; top: 20px; width: 640px; margin-left: -320px; }
+.tiles .row + .row { margin-top: 20px; }
+.tile { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 310px; height: 300px; padding: 20px; border: 0; border-radius: 40px; background: #FFFFFF; color: #23305A;
+  font: 800 30px Nunito, sans-serif; line-height: 1.15; text-decoration: none; text-align: center; cursor: pointer; box-shadow: 0 9px 0 #D3DEEF, 0 18px 40px rgba(35,48,90,.08); position: relative; top: 0; -webkit-tap-highlight-color: transparent; }
+.tile + .tile { margin-left: 20px; }
+.tile:active { top: 6px; box-shadow: 0 3px 0 #D3DEEF; }
+.tile:focus-visible { outline: 4px solid #4C8DFF; outline-offset: 6px; }
+.tile .ic { display: block; width: 150px; height: 150px; margin-bottom: 18px; }
+.tile .ic svg { width: 100%; height: 100%; display: block; }
+
+/* ---------- pictograms ---------- */
+.colors { display: flex; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
+.color { display: flex; align-items: center; width: 560px; height: 250px; margin: 0 12px 24px; padding: 0 34px; border: 0; border-radius: 40px; cursor: pointer; text-align: left; color: #FFFFFF;
+  font: 800 38px 'Baloo 2', Nunito, sans-serif; line-height: 1.05; position: relative; top: 0; -webkit-tap-highlight-color: transparent; }
+.color:active { top: 6px; }
+.color:focus-visible { outline: 4px solid #23305A; outline-offset: 6px; }
+.color .shape { width: 150px; height: 150px; flex-shrink: 0; margin-right: 28px; }
+.color small { display: block; margin-top: 6px; font: 700 22px Nunito, sans-serif; opacity: .95; }
+.color.c-blue { background: #1E5BB8; box-shadow: 0 9px 0 #154488; }
+.color.c-red { background: #D7322F; box-shadow: 0 9px 0 #A52220; }
+.color.c-green { background: #1F9D55; box-shadow: 0 9px 0 #167A41; }
+.color.c-yellow { background: #FFD400; color: #23305A; box-shadow: 0 9px 0 #D4AF00; }
+.color[disabled] { opacity: .35; cursor: default; }
+.signs { display: flex; flex-wrap: wrap; justify-content: center; margin-top: 18px; }
+.signcard { width: 270px; margin: 0 14px 26px; padding: 28px 18px 22px; border: 0; border-radius: 36px; background: #FFFFFF; cursor: pointer; color: #23305A; font: 800 26px Nunito, sans-serif; line-height: 1.15;
+  box-shadow: 0 9px 0 #D3DEEF, 0 18px 40px rgba(35,48,90,.08); position: relative; top: 0; -webkit-tap-highlight-color: transparent; animation: hop .55s cubic-bezier(.2,1.6,.4,1) both; }
+.signcard:nth-child(2) { animation-delay: .08s; } .signcard:nth-child(3) { animation-delay: .16s; } .signcard:nth-child(4) { animation-delay: .24s; }
+.signcard:active { top: 6px; box-shadow: 0 3px 0 #D3DEEF; }
+.signcard:focus-visible { outline: 4px solid #4C8DFF; outline-offset: 6px; }
+.sg { display: flex; align-items: center; justify-content: center; }
+.sg img, .sg svg { width: 100%; height: 100%; object-fit: contain; display: block; }
+.signcard .sg { width: 170px; height: 170px; margin: 0 auto 16px; }
+@keyframes hop { from { transform: translateY(30px) scale(.9); } to { transform: none; } }
+.empty { margin-top: 80px; text-align: center; font-size: 32px; font-weight: 800; color: #6B7799; }
+
+/* info popup */
+.overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; z-index: 10; background: rgba(35,48,90,.45); display: flex; align-items: center; justify-content: center; }
+.popup { width: 1120px; max-height: 720px; padding: 36px 40px; border-radius: 44px; background: #FFFFFF; display: flex; box-shadow: 0 30px 80px rgba(35,48,90,.3); animation: enter .35s cubic-bezier(.2,1.4,.4,1); }
+.popup .sg { width: 300px; height: 300px; flex-shrink: 0; margin-right: 40px; }
+.popup .body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.popup h2 { margin: 0; font-size: 50px; font-weight: 800; line-height: 1.05; }
+.popup ul { list-style: none; margin: 18px 0 0; padding: 0; overflow: auto; max-height: 400px; }
+.popup li { margin-bottom: 10px; font-size: 26px; line-height: 1.38; font-weight: 700; color: #3B4770; }
+.popup .acts { margin-top: auto; padding-top: 22px; }
+
+/* ---------- rules ---------- */
+.rules { list-style: none; margin: 10px 0 0; padding: 0; }
+.rules li { display: flex; align-items: center; margin-bottom: 14px; padding: 12px 30px 12px 12px; border-radius: 999px; background: #FFFFFF; font-size: 29px; font-weight: 800; line-height: 1.2; box-shadow: 0 5px 14px rgba(35,48,90,.06); animation: hop .5s cubic-bezier(.2,1.6,.4,1) both; }
+.rules li:nth-child(2) { animation-delay: .07s; } .rules li:nth-child(3) { animation-delay: .14s; } .rules li:nth-child(4) { animation-delay: .21s; } .rules li:nth-child(5) { animation-delay: .28s; }
+.rules .sg { width: 92px; height: 92px; flex-shrink: 0; margin-right: 24px; }
+.rules b { display: inline-block; width: 46px; height: 46px; line-height: 46px; margin-left: auto; border-radius: 50%; background: #EEF5FF; color: #6B7799; text-align: center; font-size: 22px; flex-shrink: 0; }
+.rules span { flex: 1; min-width: 0; padding-right: 16px; }
+
+/* ---------- planner ---------- */
+.lunch { display: flex; align-items: center; margin-top: 4px; padding: 16px 28px 16px 16px; border-radius: 999px; background: #FFE9DF; font-size: 28px; font-weight: 800; color: #B5462A; }
+.lunch .ico { width: 70px; height: 70px; margin-right: 18px; flex-shrink: 0; }
+.lunch.now { background: #FF7A59; color: #FFFFFF; animation: glow 1.4s ease-in-out infinite alternate; }
+@keyframes glow { to { box-shadow: 0 0 0 10px rgba(255,122,89,.25); } }
+.plan { list-style: none; margin: 16px 0 0; padding: 0; }
+.plan li { display: flex; align-items: center; margin-bottom: 8px; padding: 8px 26px 8px 8px; border-radius: 999px; background: #FFFFFF; font-size: 25px; font-weight: 800; box-shadow: 0 4px 12px rgba(35,48,90,.05); }
+.plan .ico { width: 56px; height: 56px; margin-right: 18px; flex-shrink: 0; }
+.plan time { width: 150px; flex-shrink: 0; font-variant-numeric: tabular-nums; color: #6B7799; }
+.plan li.past { opacity: .5; }
+.plan li.now { background: #23305A; color: #FFFFFF; }
+.plan li.now time { color: #C9D6EC; }
+.plan li.lunch-row { box-shadow: inset 0 0 0 4px #FF7A59; }
+.plan .tag-now { margin-left: auto; padding: 4px 14px; border-radius: 999px; background: #2BC48A; color: #FFFFFF; font-size: 18px; }
+.ico svg { width: 100%; height: 100%; display: block; }
+
+/* ---------- emergency: original site plan + moving arrows ---------- */
+.emg { display: flex; align-items: flex-start; margin-top: 2px; }
+.mapbox { width: 640px; flex-shrink: 0; margin-right: 34px; padding: 8px; background: #FFFFFF; border-radius: 22px; box-shadow: 0 14px 40px rgba(35,48,90,.10); }
+.map { display: block; width: 100%; height: auto; border-radius: 16px; }
+.map text { font-family: Nunito, Roboto, sans-serif; font-size: 17px; font-weight: 800; }
+.dots { animation: march 1.2s linear infinite; }
+@keyframes march { to { stroke-dashoffset: -36; } }
+.goal-pulse { animation: pulse 1.6s ease-out infinite; transform-origin: center; transform-box: fill-box; }
+@keyframes pulse { from { opacity: .9; transform: scale(1); } to { opacity: 0; transform: scale(1.6); } }
+.steps { list-style: none; margin: 0; padding: 0; }
+.steps li { display: flex; align-items: flex-start; margin-bottom: 18px; font-size: 26px; line-height: 1.32; font-weight: 800; }
+.steps li b { display: inline-block; width: 46px; height: 46px; line-height: 46px; margin-right: 16px; border-radius: 50%; background: #1F9D55; color: #FFFFFF; text-align: center; flex-shrink: 0; font-size: 23px; }
+.steps .goal { display: flex; align-items: center; margin-top: 6px; padding: 10px 22px 10px 10px; border-radius: 999px; background: #E2F7EE; color: #167A41; font-size: 24px; font-weight: 800; }
+.steps .goal img { width: 64px; height: 64px; margin-right: 14px; }
+
+/* ---------- human assistant ---------- */
+.caller { position: relative; width: 200px; height: 200px; margin: 0 auto; }
+.caller .avatar { position: absolute; top: 0; left: 0; right: 0; bottom: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #8E7CFF; color: #FFFFFF; font: 800 76px 'Baloo 2', Nunito, sans-serif; }
+.caller .wave { position: absolute; top: 0; left: 0; right: 0; bottom: 0; border-radius: 50%; border: 6px solid #8E7CFF; animation: ripple 1.6s ease-out infinite; }
+.caller .wave + .wave { animation-delay: .8s; }
+.caller.arrived .wave { display: none; }
+.caller.arrived .avatar { background: #2BC48A; }
+@keyframes ripple { from { transform: scale(1); opacity: .8; } to { transform: scale(1.7); opacity: 0; } }
+.help-title { margin: 36px 0 0; font-size: 56px; font-weight: 800; line-height: 1.05; }
+.lead { margin: 14px 0 0; font-size: 30px; font-weight: 700; color: #4A5680; }
+
+/* lunch reminder */
+.remind { width: 820px; padding: 44px; border-radius: 44px; background: #FFFFFF; text-align: center; box-shadow: 0 30px 80px rgba(35,48,90,.3); animation: enter .35s cubic-bezier(.2,1.4,.4,1); }
+.remind .ico { width: 170px; height: 170px; margin: 0 auto 10px; animation: float 2.6s ease-in-out infinite; }
+@keyframes float { 50% { transform: translateY(-12px); } }
+
+/* ---------- PPE safety check (same pipeline + look as index.html, scoped under .sc) ---------- */
+.sc { padding: 40px 60px; }
+.sc .row { height: 100%; }
+.sc .col { flex: 1; min-width: 0; }
+.sc .h1 { margin: 0; font-weight: 800; font-size: 84px; line-height: 1; }
+.sc .h2 { margin: 0; font-weight: 800; font-size: 56px; line-height: 1.05; }
+.sc .coral { color: #FF7A59; }
+.sc .pass-sub { margin: 16px 0 0; font-size: 40px; font-weight: 800; color: #FF7A59; }
+.sc-back { position: absolute; top: 24px; left: 28px; z-index: 6; min-height: 64px; padding: 0 24px 0 16px; font-size: 22px; }
+.sc-back svg { width: 28px; height: 28px; margin-right: 8px; }
+.sc .sign { display: inline-block; position: relative; flex-shrink: 0; width: 72px; height: 72px; border-radius: 50%; vertical-align: middle; }
+.sc .sign svg { display: block; width: 100%; height: 100%; }
+.sc .sign.s-xl { width: 150px; height: 150px; }
+.sc .live { position: relative; width: 760px; height: 570px; flex-shrink: 0; border-radius: 36px; overflow: hidden; background: #FFFFFF; box-shadow: 0 14px 40px rgba(35,48,90,.12); }
+.sc .live video, .sc .live img, .sc .live canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); background: #FFFFFF; }
+.sc .live .fallback { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+.sc .live .figure { position: absolute; left: 50%; top: 40px; width: 190px; margin-left: -95px; transition: transform .7s cubic-bezier(.2,1.3,.4,1); transform-origin: 50% 100%; }
+.sc .live .frame { position: absolute; left: 230px; right: 230px; top: 24px; bottom: 60px; border: 5px dashed rgba(255,255,255,.95); border-radius: 30px; box-shadow: 0 0 0 2px rgba(76,141,255,.35), inset 0 0 0 2px rgba(76,141,255,.35); }
+.sc .live .feet { position: absolute; left: 50%; bottom: 16px; width: 130px; margin-left: -65px; }
+.sc .live .feet ellipse { animation: bob 1.4s ease-in-out infinite alternate; }
+@keyframes bob { to { opacity: .55; } }
+.sc .live .tag { position: absolute; left: 20px; top: 20px; padding: 8px 20px; border-radius: 999px; background: #2BC48A; color: #FFFFFF; font-size: 24px; font-weight: 800; box-shadow: 0 6px 16px rgba(35,48,90,.15); animation: pop .4s cubic-bezier(.2,1.6,.4,1); }
+.sc .live .rec { position: absolute; right: 20px; top: 20px; padding: 6px 14px; border-radius: 999px; background: rgba(255,255,255,.9); color: #4C8DFF; font-size: 16px; font-weight: 800; }
+.sc .live .rec i { display: inline-block; width: 10px; height: 10px; margin-right: 7px; border-radius: 50%; background: #4C8DFF; animation: bob .8s infinite alternate; }
+.sc .live .count { position: absolute; top: 50%; left: 50%; width: 220px; height: 220px; margin: -110px 0 0 -110px; border-radius: 50%; background: rgba(255,122,89,.9); color: #FFFFFF; font-size: 150px; line-height: 220px; text-align: center; font-weight: 800; animation: pop .35s cubic-bezier(.2,1.6,.4,1); }
+.sc .live .flash { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: #FFFFFF; animation: flash .5s ease-out forwards; }
+@keyframes flash { from { opacity: 1; } to { opacity: 0; } }
+.sc .live .busy { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(238,245,255,.75); display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 34px; font-weight: 800; }
+.sc .live .busy i { width: 90px; height: 90px; margin-bottom: 18px; border-radius: 50%; border: 9px solid #DCE5F3; border-top-color: #4C8DFF; animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pop { from { transform: scale(.6); } to { transform: scale(1); } }
+.sc .body-svg { display: block; width: 100%; height: auto; }
+.sc .pos-text { padding-left: 50px; }
+.sc .hint { display: inline-flex; align-items: center; margin-top: 28px; padding: 18px 28px; border-radius: 30px; background: #FFFFFF; font-size: 30px; font-weight: 800; line-height: 1.2; box-shadow: 0 6px 18px rgba(35,48,90,.08); }
+.sc .hint.ok { background: #2BC48A; color: #FFFFFF; }
+.sc .hint.move { background: #FFF1D6; color: #B07400; }
+.sc .hero-face { width: 260px; height: 260px; margin-bottom: 26px; animation: float 3.6s ease-in-out infinite; }
+.sc .confetti { position: absolute; top: 0; left: 0; right: 0; bottom: 0; overflow: hidden; pointer-events: none; }
+.sc .confetti i { position: absolute; top: -30px; width: 14px; height: 22px; border-radius: 4px; animation: fall 3s ease-in forwards; }
+@keyframes fall { to { transform: translateY(860px) rotate(540deg); opacity: 0; } }
+.sc .cards { display: flex; justify-content: center; margin: 40px 0 50px; }
+.sc .card { width: 240px; margin: 0 12px; padding: 26px 16px 22px; text-align: center; background: #FFFFFF; border-radius: 34px; box-shadow: 0 10px 28px rgba(35,48,90,.08); animation: hop .6s cubic-bezier(.2,1.6,.4,1) both; }
+.sc .card:nth-child(2) { animation-delay: .1s; } .sc .card:nth-child(3) { animation-delay: .2s; } .sc .card:nth-child(4) { animation-delay: .3s; } .sc .card:nth-child(5) { animation-delay: .4s; }
+.sc .card b { display: block; margin-top: 16px; font-size: 30px; font-weight: 800; }
+.sc .cards.compact .card { width: 200px; margin-bottom: 16px; padding: 20px 12px 16px; }
+.sc .cards.compact .sign.s-xl { width: 110px; height: 110px; }
+.sc .cards.compact .card b { font-size: 25px; }
+.sc .still-left { text-align: center; }
+.sc .still-left .cards { margin: 30px 0 0; flex-wrap: wrap; }
+.sc .helpbox { width: 440px; flex-shrink: 0; margin-left: 30px; padding: 30px; text-align: center; background: #FFFFFF; border-radius: 36px; box-shadow: 0 14px 40px rgba(35,48,90,.10); }
+.sc .helpbox h3 { margin: 0; font-family: 'Baloo 2', Nunito, sans-serif; font-size: 36px; line-height: 1.1; }
+.sc .helpbox .where { display: inline-flex; align-items: center; margin-top: 10px; padding: 8px 18px 8px 10px; border-radius: 999px; background: #FFF1D6; color: #8A5B00; font-size: 21px; font-weight: 800; }
+.sc .helpbox .where svg { width: 30px; height: 30px; margin-right: 8px; }
+.sc .helpbox p { margin: 14px 0 18px; font-size: 23px; font-weight: 700; line-height: 1.35; color: #4A5680; }
+.sc .helpbox .btn { width: 100%; min-width: 0; }
+.sc .ring { width: 130px; height: 130px; margin: 22px auto 0; position: relative; }
+.sc .ring svg { width: 130px; height: 130px; transform: rotate(-90deg); }
+.sc .ring b { position: absolute; top: 0; left: 0; right: 0; line-height: 130px; font-size: 52px; color: #7A66F0; }
+.sc .ring-bg { fill: none; stroke: #ECE8FF; stroke-width: 10; }
+.sc .ring-fg { fill: none; stroke: #8E7CFF; stroke-width: 10; stroke-linecap: round; transition: stroke-dashoffset 1s linear; }
+.sc .caller { width: 130px; height: 130px; margin: 22px auto 0; }
+.sc .caller .avatar { font-size: 50px; }
+.sc .caller .wave { border-width: 5px; }
+
+@media (prefers-reduced-motion: reduce) { *, *:before, *:after { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="demo-wrap">
+  <div id="stage-holder">
+    <div id="stage">
+
+      <!-- header: time & date · room name · language -->
+      <header class="top" id="top" hidden>
+        <div class="top-inner">
+          <span class="clock" id="clock">07:42</span><span class="date" id="date"></span>
+          <span class="room-name display" id="room-name"></span>
+          <div class="lang" role="group" aria-label="Sprache / Language"><button type="button" data-lang="de">DE</button><button type="button" data-lang="en">EN</button></div>
+        </div>
+      </header>
+      <!-- language switch for full-screen pages (launch + safety check) -->
+      <div class="lang lang-float" id="lang-float" role="group" aria-label="Sprache / Language"><button type="button" data-lang="de">DE</button><button type="button" data-lang="en">EN</button></div>
+
+      <!-- 0 · launch: only the start button -->
+      <section class="screen full on" id="s-launch">
+        <div class="fill">
+          <button class="btn btn-start" id="btn-start" type="button"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M18 22V9a4 4 0 0 1 8 0v11l9 2.3c2.6.7 4.2 3.3 3.7 6L37 38a6 6 0 0 1-6 5H24a6 6 0 0 1-4.6-2.2L11 30.5a3.4 3.4 0 0 1 5-4.6z" fill="#FFFFFF"/></svg><span data-t="start"></span></button>
+        </div>
+      </section>
+
+      <!-- 1 · room home (wireframe figure 2) -->
+      <section class="screen" id="s-home">
+        <div class="home">
+          <button class="round round-help" id="btn-help" type="button"><span class="disc" id="ic-help"></span><span data-t="help"></span></button>
+          <button class="round round-exit" id="btn-exit" type="button"><span class="disc"><img src="assets/signs/exit.svg" alt=""></span><span data-t="exit"></span></button>
+          <div class="tiles">
+            <div class="row">
+              <button class="tile" id="tile-pictos" type="button"><span class="ic" id="ic-pictos"></span><span data-t="pictos"></span></button>
+              <button class="tile" id="tile-safety" type="button"><span class="ic" id="ic-safety"></span><span data-t="safety"></span></button>
+            </div>
+            <div class="row">
+              <button class="tile" id="tile-rules" type="button"><span class="ic" id="ic-rules"></span><span data-t="rules"></span></button>
+              <button class="tile" id="tile-plan" type="button"><span class="ic" id="ic-plan"></span><span data-t="plan"></span></button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2 · pictograms step 2: pick a colour -->
+      <section class="screen" id="s-colors">
+        <div class="bar"><button class="btn btn-soft back" type="button" data-go="home"></button><h1 class="display" data-t="pickColor"></h1></div>
+        <div class="colors" id="colors"></div>
+      </section>
+
+      <!-- 3 · pictograms step 3: signs of that colour -->
+      <section class="screen" id="s-signs">
+        <div class="bar"><button class="btn btn-soft back" type="button" data-go="colors"></button><h1 class="display" id="signs-title"></h1></div>
+        <div class="signs" id="signs"></div>
+      </section>
+
+      <!-- safety rules -->
+      <section class="screen" id="s-rules">
+        <div class="bar"><button class="btn btn-soft back" type="button" data-go="home"></button><h1 class="display" data-t="rulesTitle"></h1><button class="btn speak-btn" id="btn-rules-say" type="button"></button></div>
+        <ul class="rules" id="rules"></ul>
+      </section>
+
+      <!-- daily planner -->
+      <section class="screen" id="s-plan">
+        <div class="bar"><button class="btn btn-soft back" type="button" data-go="home"></button><h1 class="display" data-t="planTitle"></h1></div>
+        <div class="lunch" id="lunch"></div>
+        <ol class="plan" id="plan"></ol>
+      </section>
+
+      <!-- emergency exit: original site plan (Erdgeschoss) with the route drawn on top -->
+      <section class="screen" id="s-exit">
+        <div class="bar"><button class="btn btn-soft back" type="button" data-go="home"></button><h1 class="display" data-t="exitTitle"></h1><button class="btn btn-green speak-btn" id="btn-exit-say" type="button"></button></div>
+        <div class="emg">
+          <div class="mapbox">
+            <svg class="map" id="map" viewBox="0 260 660 610" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" aria-label="Lageplan Erdgeschoss mit Fluchtweg">
+              <image xlink:href="assets/lageplan.jpg" href="assets/lageplan.jpg" x="0" y="0" width="1024" height="1024"/>
+              <rect id="room-hl" x="82" y="292" width="126" height="110" rx="8" fill="none" stroke="#4C8DFF" stroke-width="6"/>
+              <polyline id="route-under" points="" fill="none" stroke="#FFFFFF" stroke-opacity=".9" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+              <polyline id="route-dots" class="dots" points="" fill="none" stroke="#1F9D55" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="1 17"/>
+              <g id="arrows"></g>
+              <rect class="goal-pulse" x="297" y="817" width="56" height="56" rx="8" fill="none" stroke="#1F9D55" stroke-width="5"/>
+              <image xlink:href="assets/signs/assembly.svg" href="assets/signs/assembly.svg" x="300" y="820" width="50" height="50"/>
+              <rect x="356" y="832" width="122" height="28" rx="14" fill="#FFFFFF"/>
+              <text x="417" y="852" text-anchor="middle" fill="#167A41" data-t="m_assembly"></text>
+              <circle id="here" cx="145" cy="375" r="13" fill="#4C8DFF" stroke="#FFFFFF" stroke-width="5"/>
+              <rect id="here-bg" x="90" y="333" width="110" height="26" rx="13" fill="#23305A"/>
+              <text id="here-label" x="145" y="352" text-anchor="middle" fill="#FFFFFF" data-t="m_here"></text>
+            </svg>
+          </div>
+          <ol class="steps" id="exit-steps" style="flex:1;min-width:0"></ol>
+        </div>
+      </section>
+
+      <!-- human assistant -->
+      <section class="screen" id="s-help">
+        <div class="fill">
+          <div class="caller" id="caller"><div class="wave"></div><div class="wave"></div><div class="avatar" id="caller-initials">MW</div></div>
+          <h2 class="help-title display" id="help-title"></h2>
+          <p class="lead" id="help-lead"></p>
+          <div style="margin-top:36px"><button class="btn btn-soft back" type="button" data-go="home"></button></div>
+        </div>
+      </section>
+
+      <!-- ===== PPE safety check (pipeline as in index.html) ===== -->
+      <section class="screen full sc" id="s-sc-position">
+        <button class="btn btn-soft sc-back" id="sc-back" type="button"></button>
+        <div class="row">
+          <div class="live">
+            <div class="fallback" id="sc-live-fallback"><div class="figure" id="sc-pos-figure"></div></div>
+            <img id="sc-live-img" alt="" hidden>
+            <video id="sc-live-video" autoplay muted playsinline hidden></video>
+            <canvas id="sc-live-still" width="640" height="480" hidden></canvas>
+            <div class="frame"></div>
+            <svg class="feet" viewBox="0 0 120 40" aria-hidden="true"><ellipse cx="38" cy="20" rx="20" ry="13" fill="#FFB938"/><ellipse cx="82" cy="20" rx="20" ry="13" fill="#FFB938"/></svg>
+            <div class="rec"><i></i>Live</div>
+            <div class="tag" id="sc-live-name" hidden></div>
+            <div class="count display" id="sc-live-count" hidden></div>
+            <div class="flash" id="sc-live-flash" hidden></div>
+            <div class="busy" id="sc-live-busy" hidden><i></i><span data-t="checking"></span></div>
+          </div>
+          <div class="col pos-text">
+            <h2 class="h2 display" data-th="posTitle"></h2>
+            <div class="hint" id="sc-pos-hint"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen full sc" id="s-sc-pass">
+        <div class="confetti" id="sc-confetti"></div>
+        <div class="fill">
+          <div class="hero-face face-slot" data-mood="happy"></div>
+          <h1 class="h1 display" data-t="passTitle"></h1>
+          <p class="pass-sub" id="sc-pass-sub"></p>
+          <div style="margin-top:40px"><button class="btn btn-next" id="sc-btn-next-pass" type="button"></button></div>
+        </div>
+      </section>
+
+      <section class="screen full sc" id="s-sc-missing">
+        <div class="fill">
+          <h2 class="h2 display" id="sc-miss-title"></h2>
+          <div class="cards" id="sc-miss-cards"></div>
+          <button class="btn btn-soft btn-next" id="sc-btn-next-miss" type="button"></button>
+        </div>
+      </section>
+
+      <section class="screen full sc" id="s-sc-still">
+        <div class="row">
+          <div class="col still-left">
+            <h2 class="h2 display" id="sc-still-title"></h2>
+            <div class="cards compact" id="sc-still-cards"></div>
+          </div>
+          <div class="helpbox">
+            <h3 data-t="waitTitle"></h3>
+            <div class="where"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15m-6-7l7 7-7 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-t="waitWhere"></span></div>
+            <div class="ring" id="sc-still-ring-wrap">
+              <svg viewBox="0 0 120 120" aria-hidden="true"><circle class="ring-bg" cx="60" cy="60" r="52"/><circle class="ring-fg" id="sc-still-ring" cx="60" cy="60" r="52" stroke-dasharray="326.7" stroke-dashoffset="0"/></svg>
+              <b class="display" id="sc-still-sec">10</b>
+            </div>
+            <div class="caller" id="sc-caller" hidden><div class="wave"></div><div class="wave"></div><div class="avatar" id="sc-caller-initials">MW</div></div>
+            <p id="sc-still-status"></p>
+            <button class="btn btn-lav" id="sc-btn-call-now" type="button" data-t="callNow"></button>
+            <button class="btn btn-next" id="sc-btn-next-still" type="button" hidden></button>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen full sc" id="s-sc-error">
+        <div class="fill">
+          <div class="face-slot" data-mood="think" style="width:150px;height:150px;margin-bottom:18px"></div>
+          <h2 class="h2 display" data-t="errTitle"></h2>
+          <div style="margin-top:36px">
+            <button class="btn" id="sc-btn-err-retry" type="button" data-t="errRetry"></button>
+            <button class="btn btn-soft" id="sc-btn-err-home" type="button" data-t="back"></button>
+          </div>
+        </div>
+      </section>
+
+      <!-- popup: sign text (close goes back to the room home) -->
+      <div class="overlay" id="info" hidden>
+        <div class="popup" role="dialog" aria-modal="true" aria-labelledby="info-title">
+          <span class="sg" id="info-sign"></span>
+          <div class="body">
+            <h2 class="display" id="info-title"></h2>
+            <ul id="info-text"></ul>
+            <div class="acts">
+              <button class="btn" id="btn-info-close" type="button"></button>
+              <button class="btn btn-soft" id="btn-info-say" type="button"></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- lunch reminder -->
+      <div class="overlay" id="remind" hidden>
+        <div class="remind" role="dialog" aria-modal="true" aria-labelledby="remind-title">
+          <div class="ico" id="remind-ico"></div>
+          <h2 class="help-title display" id="remind-title" style="margin-top:6px"></h2>
+          <p class="lead" id="remind-lead"></p>
+          <div style="margin-top:30px"><button class="btn" id="btn-remind-ok" type="button" data-t="ok"></button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <aside class="panel" id="panel">
+    <h2>Demo controls</h2>
+    <p class="note">Each room has its own address, e.g. <b>room.html?room=speisesaal</b>. Hidden on the robot.</p>
+    <h3>Room</h3>
+    <select id="demo-room"></select>
+    <h3>Try</h3>
+    <button type="button" class="pbtn" id="demo-lunch">Show lunch reminder now</button>
+    <h3>Jump to a screen</h3>
+    <select id="demo-jump">
+      <option value="">Choose a screen…</option>
+      <option value="launch">Launch (start button)</option>
+      <option value="home">Room home</option>
+      <option value="colors">Pictograms: colours</option>
+      <option value="rules">Safety rules</option>
+      <option value="plan">Daily planner</option>
+      <option value="exit">Emergency exit</option>
+      <option value="help">Human assistant</option>
+      <option value="safety">Safety check</option>
+    </select>
+    <h3>Safety check · who is there</h3>
+    <select id="demo-person">
+      <option value="francesca">Francesca (known face)</option>
+      <option value="jonas">Jonas (known face)</option>
+      <option value="visitor">Visitor (unknown face)</option>
+    </select>
+    <h3>Safety check · what YOLO detects</h3>
+    <table class="det">
+      <thead><tr><th>Item</th><th>1st visit</th><th>Return</th></tr></thead>
+      <tbody id="det-body"></tbody>
+    </table>
+    <h3>Pepper remembers</h3>
+    <p class="memory" id="demo-memory">Nobody yet.</p>
+    <button type="button" class="pbtn small" id="demo-forget">Forget everyone</button>
+    <label class="voice"><input type="checkbox" id="demo-voice" checked>Speak aloud (browser voice)</label>
+  </aside>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ================= configuration ================= */
+  var CONFIG = {
+    room: 'werkstatt-1',                      // default; normally set per tablet with ?room=
+    defaultLang: 'de',
+    backendUrl: 'http://192.168.1.50:5000',   // /help, and the safety check's /live.mjpg, /frame, /check
+    assistant: { name: 'Maria Weber', first: 'Maria' },
+    lunchRemindMinutes: 10,                   // reminder pops up this long before lunch
+    idleSeconds: 180,                         // back to the launch page after no touch
+    voice: { pitch: 115, speed: 95 },         // Pepper's built-in TTS: \vct=\ and \rspd=\ (slower = easier to follow)
+    safety: {                                 // same values as index.html
+      required: ['helmet', 'goggles', 'vest', 'gloves', 'boots'],
+      nextAfterPass: 10, nextAfterMissing: 15, callDelay: 10, nextAfterCall: 20, rememberMinutes: 60
+    }
+  };
+
+  /* ================= texts (German first, easy language) ================= */
+  var T = {
+    de: {
+      start: 'Start', help: 'Hilfe rufen', exit: 'Notausgang', pictos: 'Piktogramme', safety: 'Sicherheits-Check', rules: 'Sicherheits-Regeln', plan: 'Tagesplan',
+      back: 'Zurück', close: 'Schließen', listen: 'Vorlesen', ok: 'Okay!',
+      pickColor: 'Welche Farbe?', noSigns: 'In diesem Raum gibt es keine Zeichen in dieser Farbe.',
+      c_blue: 'Blau', c_blue_s: 'Das musst du tun', c_red: 'Rot', c_red_s: 'Verbot und Feuer', c_green: 'Grün', c_green_s: 'Rettung und Erste Hilfe', c_yellow: 'Gelb', c_yellow_s: 'Vorsicht, Gefahr!',
+      rulesTitle: 'Sicherheits-Regeln', planTitle: 'Tagesplan', exitTitle: 'So kommst du raus', now: 'Jetzt',
+      lunchIn: 'Mittagspause um {t} Uhr · noch {left}', lunchNow: 'Jetzt ist Mittagspause! Bis {t} Uhr.', lunchDone: 'Die Mittagspause ist vorbei.',
+      hours: '{h} Std. {m} Min.', mins: '{m} Min.',
+      remindTitle: 'Bald ist Mittagspause!', remindLead: 'Um {t} Uhr · {where}', sayRemind: 'Bald ist Mittagspause! Um {t} Uhr. {where}.',
+      sayHome: 'Hallo! Was möchtest du machen?', sayExit: 'Notausgang. So kommst du sicher raus.',
+      helpCalling: 'Ich rufe {name}…', helpComing: '{name} kommt gleich!', helpWait: 'Bitte warte hier bei mir.', helpFail: 'Ich erreiche {name} nicht. Bitte frag jemanden in der Nähe.',
+      sayCalling: 'Ich rufe {name}. Bitte warte hier bei mir.', sayComing: '{name} kommt gleich zu dir.',
+      m_assembly: 'Sammelplatz', m_here: 'Du bist hier', goal: 'Ziel: Sammelplatz',
+      days: ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'],
+      months: ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'],
+      /* safety check (identical wording to index.html) */
+      posTitle: 'Stell dich auf die<br><span class="coral">gelben Fußspuren</span>', checking: 'Moment…',
+      h_none: 'Ich suche dich…', h_step_back: 'Bitte einen kleinen Schritt zurück', h_come_closer: 'Komm ein bisschen näher',
+      h_move_left: '← Ein bisschen nach links', h_move_right: 'Ein bisschen nach rechts →', h_ok: 'Perfekt! Bitte stillhalten',
+      hiName: 'Hallo {name}!', backName: 'Willkommen zurück, {name}!',
+      sayPos: 'Hallo! Stell dich bitte auf die gelben Fußspuren, damit ich dich ganz sehe.',
+      sayHi: 'Hallo {name}!', sayBack: 'Willkommen zurück{cn}!', sayFreeze: 'Perfekt! Bitte lächeln und stillhalten.',
+      passTitle: 'Sicherheitscheck bestanden!', passSub: 'Einen schönen Tag{cn}!', sayPass: 'Rock on{cn}! Sicherheitscheck bestanden. Einen schönen Tag!',
+      missTitle: 'Es fehlt:', missTitleName: '{name}, es fehlt:',
+      sayMiss: 'Du brauchst noch {list}. Komm danach einfach wieder zu mir!', sayMissName: '{name}, du brauchst noch {list}. Komm danach einfach wieder zu mir!',
+      stillTitle: 'Es fehlt immer noch:', stillTitleName: '{name}, es fehlt immer noch:',
+      waitTitle: 'Bitte warte am Wartepunkt', waitWhere: 'Gelbe Markierung rechts neben mir',
+      callIn: 'Ich rufe {helper} in {s} Sekunden.', callNow: 'Jetzt rufen', calling: 'Ich rufe {helper}…', called: '{helper} ist informiert und kommt gleich zu dir.',
+      callFail: 'Ich habe {helper} nicht erreicht. Bitte ruf Durchwahl {ext} an.',
+      sayStill: 'Hmm, ich sehe {list} immer noch nicht. Bitte warte am Wartepunkt rechts neben mir. Ich rufe gleich {helper}.',
+      sayCalled: '{helper} ist informiert und kommt gleich zu dir.', sayCallFail: 'Ich habe {helper} nicht erreicht. Bitte ruf Durchwahl {ext} an.',
+      nextBtn: 'Nächste Person', errTitle: 'Hoppla, meine Kamera braucht kurz', errRetry: 'Nochmal versuchen',
+      sayErr: 'Hoppla, meine Kamera braucht einen Moment. Versuchen wir es nochmal.', and: 'und'
+    },
+    en: {
+      start: 'Start', help: 'Call for help', exit: 'Emergency exit', pictos: 'Pictograms', safety: 'Safety check', rules: 'Safety rules', plan: 'Daily plan',
+      back: 'Back', close: 'Close', listen: 'Read aloud', ok: 'Okay!',
+      pickColor: 'Which colour?', noSigns: 'There are no signs of this colour in this room.',
+      c_blue: 'Blue', c_blue_s: 'You must do this', c_red: 'Red', c_red_s: 'Forbidden and fire', c_green: 'Green', c_green_s: 'Escape and first aid', c_yellow: 'Yellow', c_yellow_s: 'Careful, danger!',
+      rulesTitle: 'Safety rules', planTitle: 'Daily plan', exitTitle: 'How to get out', now: 'Now',
+      lunchIn: 'Lunch break at {t} · in {left}', lunchNow: 'It\'s lunch break now! Until {t}.', lunchDone: 'Lunch break is over.',
+      hours: '{h} h {m} min', mins: '{m} min',
+      remindTitle: 'Lunch break soon!', remindLead: 'At {t} · {where}', sayRemind: 'Lunch break soon! At {t}. {where}.',
+      sayHome: 'Hello! What would you like to do?', sayExit: 'Emergency exit. This is how you get out safely.',
+      helpCalling: 'Calling {name}…', helpComing: '{name} is coming!', helpWait: 'Please wait here with me.', helpFail: 'I can\'t reach {name}. Please ask someone nearby.',
+      sayCalling: 'I\'m calling {name}. Please wait here with me.', sayComing: '{name} is on the way to you.',
+      m_assembly: 'Assembly point', m_here: 'You are here', goal: 'Goal: assembly point',
+      days: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+      months: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+      posTitle: 'Stand on the<br><span class="coral">yellow footprints</span>', checking: 'One moment…',
+      h_none: 'Looking for you…', h_step_back: 'A tiny step back, please', h_come_closer: 'Come a little closer',
+      h_move_left: '← A little to your left', h_move_right: 'A little to your right →', h_ok: 'Perfect! Hold still',
+      hiName: 'Hi {name}!', backName: 'Welcome back, {name}!',
+      sayPos: 'Hello! Please stand on the yellow footprints, so I can see all of you.',
+      sayHi: 'Hi {name}!', sayBack: 'Welcome back{cn}!', sayFreeze: 'Perfect! Smile and hold still.',
+      passTitle: 'Safety check passed!', passSub: 'Have a great day{cn}!', sayPass: 'Rock on{cn}! Safety check passed. Have a great day!',
+      missTitle: 'Missing:', missTitleName: '{name}, you\'re missing:',
+      sayMiss: 'You still need {list}. Then just come back to me!', sayMissName: '{name}, you still need {list}. Then just come back to me!',
+      stillTitle: 'Still missing:', stillTitleName: '{name}, still missing:',
+      waitTitle: 'Please wait at the waiting spot', waitWhere: 'Yellow mark to my right',
+      callIn: 'Calling {helper} in {s} seconds.', callNow: 'Call now', calling: 'Calling {helper}…', called: '{helper} knows and is on the way to you.',
+      callFail: 'I couldn\'t reach {helper}. Please call ext. {ext}.',
+      sayStill: 'Hmm, I still can\'t see {list}. Please wait at the waiting spot to my right. I\'ll call {helper} in a moment.',
+      sayCalled: '{helper} knows and is on the way to you.', sayCallFail: 'I couldn\'t reach {helper}. Please call extension {ext}.',
+      nextBtn: 'Next person', errTitle: 'Oops, my camera needs a moment', errRetry: 'Try again',
+      sayErr: 'Oops, my camera needs a moment. Let\'s try again.', and: 'and'
+    }
+  };
+
+  /* ================= safety signs: official ISO 7010 images, texts from the requirements document ================= */
+  var SIGNS = {
+    voltage: { cat: 'yellow', img: 'voltage',
+      de: { name: 'Hochspannung', text: ['Das Bild für Hochspannung zeigt ein Blitz-Symbol.', 'Blitz bedeutet: Hier gibt es elektrischen Strom.', 'Elektrischer Strom kann gefährlich sein.', 'Hochspannung heißt: Der Strom ist besonders stark.', 'Berühren Sie nichts in diesem Bereich.', 'Sonst kann ein schlimmer Unfall passieren.', 'Das Zeichen warnt Sie: Bleiben Sie weg.'] },
+      en: { name: 'High voltage', text: ['The high-voltage sign shows a lightning bolt.', 'The bolt means: there is electric current here.', 'Electric current can be dangerous.', 'High voltage means: the current is very strong.', 'Do not touch anything in this area.', 'Otherwise a bad accident can happen.', 'The sign warns you: stay away.'] } },
+    gloves: { cat: 'blue', img: 'gloves',
+      de: { name: 'Schutzhandschuhe', text: ['Das Bild für Schutzhandschuhe zeigt ein Bild von Handschuhen.', 'Das Zeichen sagt dir: Du sollst deine Hände mit Schutzhandschuhen schützen.', 'Schutzhandschuhe sind spezielle Handschuhe.', 'Sie schützen deine Hände zum Beispiel vor Chemikalien, Schmutz oder Verletzungen.', 'Wenn du dieses Zeichen siehst: Ziehe bitte Schutzhandschuhe an.'] },
+      en: { name: 'Safety gloves', text: ['The safety-glove sign shows a picture of gloves.', 'The sign tells you: protect your hands with safety gloves.', 'Safety gloves are special gloves.', 'They protect your hands, for example from chemicals, dirt or injuries.', 'When you see this sign: please put on safety gloves.'] } },
+    exit: { cat: 'green', img: 'exit',
+      de: { name: 'Notausgang', text: ['Das Bild bedeutet: Hier kannst du sicher den Raum verlassen.', 'Du kannst diesen Weg im Notfall benutzen.', 'Zum Beispiel, wenn es brennt oder du schnell raus musst.', 'Schaue immer auf diese Zeichen, wenn du das Gebäude verlässt.', 'Wichtige Information: Der Rettungsweg ist meistens mit einem grünen Schild markiert.', 'Das Symbol zeigt dir, wo der Weg zum Ausgang ist.'] },
+      en: { name: 'Emergency exit', text: ['The picture means: you can leave the room safely here.', 'You can use this way in an emergency.', 'For example, if there is a fire or you have to get out fast.', 'Always look for these signs when you leave the building.', 'Important: the escape route is usually marked with a green sign.', 'The symbol shows you the way to the exit.'] } },
+    extinguisher: { cat: 'red', img: 'extinguisher',
+      de: { name: 'Feuerlöscher', text: ['Dieses Bild zeigt einen Feuerlöscher.', 'Mit einem Feuerlöscher kann man Feuer löschen.', 'Das rote Bild mit dem weißen Feuerlöscher bedeutet: Hier gibt es einen Feuerlöscher.', 'Sie können den Feuerlöscher benutzen, wenn es brennt.', 'Achten Sie auf das Zeichen, damit Sie im Notfall schnell helfen können.'] },
+      en: { name: 'Fire extinguisher', text: ['This picture shows a fire extinguisher.', 'You can put out a fire with a fire extinguisher.', 'The red picture with the white extinguisher means: there is a fire extinguisher here.', 'You can use the fire extinguisher if there is a fire.', 'Look out for the sign so you can help quickly in an emergency.'] } },
+    hot: { cat: 'yellow', img: 'hot',
+      de: { name: 'Heiße Oberfläche', text: ['Die Wellen bedeuten: Die Oberfläche ist heiß.', 'Wenn Sie das Zeichen sehen, seien Sie vorsichtig.', 'Legen Sie Ihre Hand nicht auf die Oberfläche.', 'Sie können sich sonst verbrennen.', 'Das Zeichen warnt Sie: Achtung, Sie könnten sich verletzen.'] },
+      en: { name: 'Hot surface', text: ['The waves mean: the surface is hot.', 'When you see the sign, be careful.', 'Do not put your hand on the surface.', 'Otherwise you can burn yourself.', 'The sign warns you: careful, you could get hurt.'] } },
+    firstaid: { cat: 'green', img: 'firstaid',
+      de: { name: 'Erste Hilfe', text: ['Das Zeichen für einen Erste-Hilfe-Kasten ist meistens ein grünes Quadrat.', 'Auf dem grünen Quadrat ist oft ein weißes Kreuz zu sehen.', 'In einem Erste-Hilfe-Kasten findest du Pflaster und Verbände.', 'Du benutzt den Erste-Hilfe-Kasten, wenn sich jemand verletzt hat.', 'Das Zeichen zeigt dir, wo du Hilfe bekommst.'] },
+      en: { name: 'First aid', text: ['The sign for a first-aid kit is usually a green square.', 'There is often a white cross on the green square.', 'In a first-aid kit you find plasters and bandages.', 'You use the first-aid kit when someone is hurt.', 'The sign shows you where to get help.'] } },
+    aed: { cat: 'green', img: 'aed',
+      de: { name: 'Defibrillator', text: ['Das Zeichen für einen Defibrillator ist meistens ein grünes Quadrat.', 'Es zeigt ein weißes Herz mit einem Blitz.', 'Der Defibrillator hilft beim plötzlichen Herzstillstand.', 'Du findest den Defibrillator oft an öffentlichen Orten.', 'Das Zeichen zeigt dir, wo ein Defibrillator ist.'] },
+      en: { name: 'Defibrillator', text: ['The sign for a defibrillator is usually a green square.', 'It shows a white heart with a lightning bolt.', 'The defibrillator helps when a heart suddenly stops.', 'You often find a defibrillator in public places.', 'The sign shows you where a defibrillator is.'] } },
+    trash: { cat: 'blue', img: 'trash',
+      de: { name: 'Müll in den Mülleimer', text: ['Das Bild zeigt einen Menschen.', 'Der Mensch hat Müll in der Hand.', 'Der Mensch wirft den Müll in einen Mülleimer.', 'Das bedeutet: Du sollst deinen Müll in den Mülleimer werfen.', 'So bleibt die Umgebung sauber.', 'Wirf deinen Müll nicht auf den Boden.'] },
+      en: { name: 'Rubbish in the bin', text: ['The picture shows a person.', 'The person has rubbish in their hand.', 'The person throws the rubbish into a bin.', 'This means: you should throw your rubbish into the bin.', 'This keeps everything clean.', 'Do not throw your rubbish on the floor.'] } }
+  };
+  function signImg(name) { return '<img src="assets/signs/' + name + '.svg" alt="">'; }
+
+  /* ================= rooms ================= */
+  /* plan, rules and lunch are EXAMPLES – replace with each room's real day.
+     Escape routes are drawn in pixel coordinates of assets/lageplan.jpg (1024 x 1024) and must be checked
+     against the official Flucht- und Rettungsplan. */
+  var WORK_RULES = [
+    { icon: 'gloves', de: 'Zieh Schutzhandschuhe an.', en: 'Put on safety gloves.' },
+    { icon: 'goggles', de: 'Setz die Schutzbrille auf.', en: 'Put on your safety glasses.' },
+    { icon: 'gear', de: 'Benutze Maschinen nur, wenn du es gelernt hast.', en: 'Only use machines you have been trained on.' },
+    { icon: 'walk', de: 'Halte die Wege frei.', en: 'Keep the walkways clear.' },
+    { icon: 'talk', de: 'Ist etwas kaputt? Sag es sofort.', en: 'Is something broken? Say so right away.' }
+  ];
+  var WORK_ESCAPE = {
+    de: ['Bleib ruhig. Lass alles liegen.', 'Geh durch die Tür links direkt nach draußen.', 'Geh links am Gebäude entlang nach vorne zum Parkplatz.', 'Geh zum Sammelplatz an der Straße und warte dort.'],
+    en: ['Stay calm. Leave everything where it is.', 'Go straight outside through the door on the left.', 'Walk along the left side of the building to the car park.', 'Go to the assembly point by the street and wait there.']
+  };
+  var FRONT_ESCAPE = {
+    de: ['Bleib ruhig. Lass alles liegen.', 'Geh geradeaus durch das Foyer.', 'Geh durch den Haupteingang nach draußen.', 'Geh geradeaus zum Sammelplatz an der Straße und warte dort.'],
+    en: ['Stay calm. Leave everything where it is.', 'Walk straight ahead through the foyer.', 'Go outside through the main entrance.', 'Go straight on to the assembly point by the street and wait there.']
+  };
+  function workPlan(job) {
+    return [
+      { t: '07:45', kind: 'arrive', de: 'Ankommen und Sicherheits-Check', en: 'Arrive and safety check' },
+      { t: '08:00', kind: 'work', de: 'Arbeit: ' + job.de, en: 'Work: ' + job.en },
+      { t: '09:30', kind: 'break', de: 'Kleine Pause', en: 'Short break' },
+      { t: '09:45', kind: 'work', de: 'Arbeit: ' + job.de, en: 'Work: ' + job.en },
+      { t: '12:00', kind: 'lunch', de: 'Mittagspause im Speisesaal', en: 'Lunch break in the dining hall' },
+      { t: '12:45', kind: 'work', de: 'Arbeit: ' + job.de, en: 'Work: ' + job.en },
+      { t: '14:30', kind: 'clean', de: 'Aufräumen', en: 'Tidy up' },
+      { t: '15:00', kind: 'home', de: 'Feierabend', en: 'Home time' }
+    ];
+  }
+  var LUNCH_WORK = { start: '12:00', end: '12:45', de: 'Im Speisesaal', en: 'In the dining hall' };
+  var FRONT = [[325, 685], [325, 815]];   // walkway from the building front to the assembly point
+
+  var ROOMS = {
+    'werkstatt-1': {
+      de: 'Werkstattbereich 1', en: 'Workshop Area 1',
+      signs: ['voltage', 'gloves', 'exit', 'extinguisher'], rules: WORK_RULES,
+      plan: workPlan({ de: 'Montage und Verpackung', en: 'assembly and packaging' }), lunch: LUNCH_WORK,
+      escape: { box: [82, 292, 126, 110], route: [[145, 380], [75, 380], [45, 380], [45, 685]].concat(FRONT), steps: WORK_ESCAPE }
+    },
+    'werkstatt-2': {
+      de: 'Werkstattbereich 2', en: 'Workshop Area 2',
+      signs: ['voltage', 'gloves', 'exit', 'extinguisher'], rules: WORK_RULES,
+      plan: workPlan({ de: 'Holzverarbeitung', en: 'woodworking' }), lunch: LUNCH_WORK,
+      escape: { box: [82, 408, 126, 117], route: [[145, 440], [75, 440], [45, 440], [45, 685]].concat(FRONT), steps: WORK_ESCAPE }
+    },
+    speisesaal: {
+      de: 'Speisesaal / Cafeteria', en: 'Dining Hall / Cafeteria',
+      signs: ['extinguisher', 'hot', 'firstaid', 'aed', 'trash'],
+      rules: [
+        { icon: 'wash', de: 'Wasch dir vor dem Essen die Hände.', en: 'Wash your hands before eating.' },
+        { icon: 'hot', de: 'Vorsicht: Teller und Töpfe können heiß sein.', en: 'Careful: plates and pots can be hot.' },
+        { icon: 'trash', de: 'Bring dein Geschirr zurück. Müll in den Mülleimer.', en: 'Bring your dishes back. Rubbish in the bin.' },
+        { icon: 'spill', de: 'Ist etwas verschüttet? Sag es sofort.', en: 'Something spilled? Say so right away.' }
+      ],
+      plan: [
+        { t: '09:30', kind: 'break', de: 'Frühstückspause', en: 'Breakfast break' },
+        { t: '10:00', kind: 'clean', de: 'Tische sauber machen', en: 'Clean the tables' },
+        { t: '11:30', kind: 'work', de: 'Tische decken', en: 'Set the tables' },
+        { t: '12:00', kind: 'lunch', de: 'Mittagessen', en: 'Lunch' },
+        { t: '12:45', kind: 'clean', de: 'Abräumen und spülen', en: 'Clear up and wash up' },
+        { t: '14:00', kind: 'break', de: 'Kaffeepause', en: 'Coffee break' },
+        { t: '15:00', kind: 'home', de: 'Feierabend', en: 'Home time' }
+      ],
+      lunch: { start: '12:00', end: '12:45', de: 'Hier im Speisesaal', en: 'Right here in the dining hall' },
+      escape: { box: [237, 292, 98, 133], route: [[286, 360], [286, 685]].concat(FRONT), steps: FRONT_ESCAPE }
+    },
+    sanitaer: {
+      de: 'Sanitär- und Pflegebereich', en: 'Sanitary and Care Area',
+      signs: ['trash', 'firstaid', 'aed', 'extinguisher'],
+      rules: [
+        { icon: 'wash', de: 'Wasch dir die Hände mit Seife.', en: 'Wash your hands with soap.' },
+        { icon: 'gloves', de: 'Bei der Pflege: Zieh Einmal-Handschuhe an.', en: 'When giving care: put on disposable gloves.' },
+        { icon: 'trash', de: 'Benutzte Handschuhe in den Mülleimer.', en: 'Used gloves go in the bin.' },
+        { icon: 'talk', de: 'Brauchst du Hilfe? Ruf mich oder frag jemanden.', en: 'Need help? Call me or ask someone.' }
+      ],
+      plan: [
+        { t: '08:00', kind: 'care', de: 'Pflegezeit', en: 'Care time' },
+        { t: '10:00', kind: 'care', de: 'Pflegezeit', en: 'Care time' },
+        { t: '12:00', kind: 'lunch', de: 'Mittagspause im Speisesaal', en: 'Lunch break in the dining hall' },
+        { t: '13:00', kind: 'care', de: 'Pflegezeit', en: 'Care time' },
+        { t: '14:30', kind: 'clean', de: 'Aufräumen und sauber machen', en: 'Tidy up and clean' },
+        { t: '15:00', kind: 'home', de: 'Feierabend', en: 'Home time' }
+      ],
+      lunch: { start: '12:00', end: '12:45', de: 'Im Speisesaal', en: 'In the dining hall' },
+      escape: { box: [368, 402, 90, 63], route: [[413, 433], [350, 433], [350, 575], [286, 575], [286, 685]].concat(FRONT),
+        steps: { de: ['Bleib ruhig. Brauchst du Hilfe? Ruf laut.', 'Geh raus in den Flur und dann geradeaus bis zum Foyer.', 'Geh durch den Haupteingang nach draußen.', 'Geh geradeaus zum Sammelplatz an der Straße und warte dort.'],
+                 en: ['Stay calm. Need help? Call out loud.', 'Go out into the corridor and straight on to the foyer.', 'Go outside through the main entrance.', 'Go straight on to the assembly point by the street and wait there.'] } }
+    }
+  };
+
+  /* ================= UI icons (our own style – used only for buttons, never for safety signs) ================= */
+  var W = 'fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round"';
+  function disc(color, inner) { return '<svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="48" fill="' + color + '"/>' + inner + '</svg>'; }
+  var GLYPH = {
+    gear: '<g fill="#fff"><rect x="44" y="20" width="12" height="60" rx="3"/><rect x="44" y="20" width="12" height="60" rx="3" transform="rotate(45 50 50)"/><rect x="44" y="20" width="12" height="60" rx="3" transform="rotate(90 50 50)"/><rect x="44" y="20" width="12" height="60" rx="3" transform="rotate(135 50 50)"/><circle cx="50" cy="50" r="22"/></g><circle cx="50" cy="50" r="9" fill="currentColor"/>',
+    walk: '<circle cx="52" cy="24" r="7" fill="#fff"/><path d="M50 34L46 56M46 56L38 76M46 56L56 74M48 40L60 50M48 40L36 48" ' + W + ' stroke-width="7"/><path d="M24 82H76" ' + W + ' stroke-width="4" stroke-dasharray="6 7"/>',
+    talk: '<path d="M22 30Q22 22 30 22H70Q78 22 78 30V56Q78 64 70 64H44L30 76V64H30Q22 64 22 56Z" fill="#fff"/><circle cx="37" cy="43" r="5" fill="currentColor"/><circle cx="50" cy="43" r="5" fill="currentColor"/><circle cx="63" cy="43" r="5" fill="currentColor"/>',
+    spill: '<path d="M46 18C38 32 34 38 34 46A12 12 0 0 0 58 46C58 38 54 32 46 18Z" fill="#fff"/><ellipse cx="54" cy="74" rx="26" ry="7" fill="#fff"/>',
+    arrive: '<rect x="54" y="20" width="24" height="60" rx="3" fill="#fff"/><path d="M22 50H46M38 42L46 50L38 58" ' + W + ' stroke-width="7"/>',
+    coffee: '<path d="M28 42H66V58Q66 74 47 74Q28 74 28 58Z" fill="#fff"/><path d="M66 48Q78 48 76 58Q74 66 64 64" ' + W + ' stroke-width="5"/><path d="M38 34q-4-6 0-12M50 34q-4-6 0-12" ' + W + ' stroke-width="4"/>',
+    lunch: '<path d="M36 22V78M30 22V40Q30 46 36 46Q42 46 42 40V22" ' + W + ' stroke-width="5"/><path d="M64 22Q76 38 64 52V78" ' + W + ' stroke-width="6"/>',
+    clean: '<path d="M66 18L50 54" ' + W + ' stroke-width="6"/><path d="M34 52L62 60L56 82L26 74Z" fill="#fff"/>',
+    home: '<path d="M50 22L80 48H71V78H29V48H20Z" fill="#fff"/><rect x="44" y="58" width="12" height="20" fill="currentColor"/>',
+    care: '<path d="M50 78C24 60 20 42 31 34C40 28 48 33 50 40C52 33 60 28 69 34C80 42 76 60 50 78Z" fill="#fff"/>',
+    helper: '<circle cx="44" cy="32" r="11" fill="#fff"/><path d="M24 80Q24 52 44 52Q60 52 63 66" fill="#fff"/><path d="M68 54V30M68 30l-5 5M68 30l5 5" ' + W + ' stroke-width="6"/>',
+    clipboard: '<rect x="26" y="20" width="48" height="62" rx="8" fill="#fff"/><rect x="38" y="15" width="24" height="12" rx="4" fill="#fff" stroke="currentColor" stroke-width="3"/><path d="M36 44l5 5 9-10M36 64l5 5 9-10" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M56 46H66M56 66H66" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>',
+    calendar: '<rect x="22" y="26" width="56" height="52" rx="8" fill="#fff"/><path d="M22 40H78" stroke="currentColor" stroke-width="4"/><path d="M36 20V32M64 20V32" ' + W + ' stroke-width="6"/><circle cx="50" cy="59" r="12" fill="none" stroke="currentColor" stroke-width="4"/><path d="M50 52V59L55 62" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>'
+  };
+  GLYPH.work = GLYPH.gear;
+  function glyph(name, color) { return disc(color, '<g style="color:' + color + '">' + GLYPH[name] + '</g>'); }
+  var SIGN_FILES = { gloves: 1, goggles: 1, wash: 1, trash: 1, hot: 1 };
+  function ruleIcon(id) { return SIGN_FILES[id] ? signImg(id) : glyph(id, '#8E7CFF'); }
+  var PLAN_COLOR = { arrive: '#2BC48A', work: '#4C8DFF', break: '#FFB938', lunch: '#FF7A59', clean: '#22B8B0', home: '#8E7CFF', care: '#FF8FB1' };
+  function planIcon(kind) { return glyph(kind === 'break' ? 'coffee' : kind, PLAN_COLOR[kind]); }
+  var SIGN_BLUE = '#1E5BB8', SIGN_RED = '#D7322F', SIGN_GREEN = '#1F9D55', SIGN_YELLOW = '#FFD400', INK = '#1A1A1A';
+  var COLOR_SHAPE = {
+    blue: '<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="#FFFFFF" opacity=".95"/><circle cx="50" cy="50" r="30" fill="' + SIGN_BLUE + '"/></svg>',
+    red: '<svg viewBox="0 0 100 100"><rect x="6" y="6" width="88" height="88" rx="10" fill="#FFFFFF" opacity=".95"/><rect x="24" y="24" width="52" height="52" rx="6" fill="' + SIGN_RED + '"/></svg>',
+    green: '<svg viewBox="0 0 100 100"><rect x="6" y="6" width="88" height="88" rx="10" fill="#FFFFFF" opacity=".95"/><path d="M30 50H70M58 38L70 50L58 62" fill="none" stroke="' + SIGN_GREEN + '" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    yellow: '<svg viewBox="0 0 100 100"><path d="M50 9L93 86H7Z" fill="#FFFFFF" stroke="' + INK + '" stroke-width="7" stroke-linejoin="round"/><path d="M50 36V60" stroke="' + INK + '" stroke-width="9" stroke-linecap="round"/><circle cx="50" cy="72" r="5" fill="' + INK + '"/></svg>'
+  };
+  var CATS = ['blue', 'red', 'green', 'yellow'];
+  var BACK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12H5m6-7l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  var SPEAK_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M16 8.5q2 3.5 0 7M18.5 6q4 6 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+
+  /* ================= helpers ================= */
+  var LANG = CONFIG.defaultLang, roomId = CONFIG.room, room = null;
+  function $(id) { return document.getElementById(id); }
+  function each(a, fn) { for (var i = 0; i < a.length; i++) fn(a[i], i); }
+  function filter(a, fn) { var r = []; each(a, function (x) { if (fn(x)) r.push(x); }); return r; }
+  function t(key, v) {
+    var s = T[LANG][key]; if (s == null) s = T.de[key];
+    return typeof s !== 'string' ? s : s.replace(/\{(\w+)\}/g, function (m, k) { return v && v[k] != null ? v[k] : ''; });
+  }
+  function L(obj) { return obj[LANG] || obj.de; }
+  function initials(full) { return full.split(' ').map(function (w) { return w.charAt(0); }).join('').slice(0, 2); }
+  function mins(hhmm) { var p = hhmm.split(':'); return +p[0] * 60 + +p[1]; }
+  function nowMins() { var d = new Date(); return d.getHours() * 60 + d.getMinutes(); }
+  function wait(ms) { return new Promise(function (res) { setTimeout(res, ms); }); }
+
+  /* ================= robot link + voice (Pepper built-in TTS) ================= */
+  var onRobot = false;
+  var Robot = { speech: null, tts: null, memory: null };
+  function then(p, fn) { if (p && p.then) p.then(fn); else if (p && p.done) p.done(fn); }
+  function connectRobot(done) {
+    var finished = false;
+    function finish(ok) { if (!finished) { finished = true; done(ok); } }
+    var s = document.createElement('script');
+    s.src = '/libs/qimessaging/2/qimessaging.js';
+    s.onload = function () {
+      if (!window.QiSession) return finish(false);
+      window.QiSession(function (session) {
+        then(session.service('ALAnimatedSpeech'), function (x) { Robot.speech = x; });
+        then(session.service('ALTextToSpeech'), function (x) { Robot.tts = x; setRobotLang(); });
+        then(session.service('ALMemory'), function (x) { Robot.memory = x; });
+        finish(true);
+      }, function () { finish(false); });
+    };
+    s.onerror = function () { finish(false); };
+    document.head.appendChild(s);
+    setTimeout(function () { finish(false); }, 2500);
+  }
+  function setRobotLang() { if (Robot.tts) Robot.tts.setLanguage(LANG === 'de' ? 'German' : 'English'); }
+  function raise(key, value) { if (Robot.memory) Robot.memory.raiseEvent(key, JSON.stringify(value)); else if (window.console) console.log('[event]', key, value); }
+  var demoVoice = true;
+  /* stop whatever is being read out – on every screen change and when a window closes */
+  function stopSpeech() {
+    if (Robot.tts) Robot.tts.stopAll();
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+  }
+  function say(text) {
+    stopSpeech();
+    if (Robot.speech) {
+      Robot.speech.say('\\vct=' + CONFIG.voice.pitch + '\\ \\rspd=' + CONFIG.voice.speed + '\\ ' + text);
+    } else if (window.speechSynthesis && demoVoice) {
+      var u = new SpeechSynthesisUtterance(text);
+      u.lang = LANG === 'de' ? 'de-DE' : 'en-US'; u.pitch = 1.25; u.rate = .95;
+      var v = filter(window.speechSynthesis.getVoices(), function (x) { return x.lang.indexOf(LANG) === 0; })[0];
+      if (v) u.voice = v;
+      window.speechSynthesis.speak(u);
+    }
+  }
+
+  /* ================= flow control (shared by room screens and the safety check) ================= */
+  var current = 'launch', idleTimer = null, run = 0, timers = [], redraw = null;
+  function stopFlow() { run++; each(timers, clearTimeout); timers = []; }
+  function later(fn, ms) { var my = run; timers.push(setTimeout(function () { if (my === run) fn(); }, ms)); }
+  function guard(fn) { var my = run; return function (v) { if (my === run) return fn(v); }; }
+  function countdown(sec, onTick, onDone) {
+    (function tick(s) { onTick(s); if (s === 0) return onDone(); later(function () { tick(s - 1); }, 1000); })(sec);
+  }
+  function show(name) {
+    stopFlow();
+    stopSpeech();
+    $('info').hidden = true;
+    each(document.querySelectorAll('.screen'), function (s) { s.classList.toggle('on', s.id === 's-' + name); });
+    var full = name === 'launch' || name.indexOf('sc-') === 0;
+    $('top').hidden = full;
+    $('lang-float').hidden = !full;
+    if (current === 'sc-position' && name !== 'sc-position') stopLive();
+    if (name !== 'exit') stopArrows();
+    current = name;
+    redraw = null;
+    touch();
+  }
+  function touch() {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(function () { if (current !== 'launch') show('launch'); }, CONFIG.idleSeconds * 1000);
+  }
+  function goHome(greet) { show('home'); if (greet) say(t('sayHome')); }
+
+  /* ================= pictograms: colour → signs → text ================= */
+  var pickedCat = null, infoId = null;
+  function showColors() {
+    show('colors');
+    $('colors').innerHTML = CATS.map(function (c) {
+      var n = filter(room.signs, function (id) { return SIGNS[id].cat === c; }).length;
+      return '<button type="button" class="color c-' + c + '" data-cat="' + c + '"' + (n ? '' : ' disabled') + '><span class="shape">' + COLOR_SHAPE[c] + '</span><span>' + t('c_' + c) + '<small>' + t('c_' + c + '_s') + '</small></span></button>';
+    }).join('');
+    each($('colors').children, function (b) { b.onclick = function () { showSigns(b.getAttribute('data-cat')); }; });
+  }
+  function showSigns(cat) {
+    pickedCat = cat;
+    show('signs');
+    $('signs-title').textContent = t('c_' + cat) + ': ' + t('c_' + cat + '_s');
+    var ids = filter(room.signs, function (id) { return SIGNS[id].cat === cat; });
+    $('signs').innerHTML = ids.length ? ids.map(function (id) {
+      return '<button type="button" class="signcard" data-id="' + id + '"><span class="sg">' + signImg(SIGNS[id].img) + '</span>' + L(SIGNS[id]).name + '</button>';
+    }).join('') : '<div class="empty">' + t('noSigns') + '</div>';
+    each(document.querySelectorAll('#signs .signcard'), function (b) { b.onclick = function () { showInfo(b.getAttribute('data-id')); }; });
+  }
+  function infoText(id) { var s = L(SIGNS[id]); return s.name + '. ' + s.text.join(' '); }
+  function showInfo(id) {
+    infoId = id;
+    var s = L(SIGNS[id]);
+    $('info-sign').innerHTML = signImg(SIGNS[id].img);
+    $('info-title').textContent = s.name;
+    $('info-text').innerHTML = s.text.map(function (line) { return '<li>' + line + '</li>'; }).join('');
+    $('info').hidden = false;
+    touch();
+    say(infoText(id));
+  }
+  function closeInfo() { stopSpeech(); $('info').hidden = true; infoId = null; goHome(false); }   // spec: close returns to the room home
+
+  /* ================= safety rules ================= */
+  function rulesText() { return room.rules.map(function (r) { return L(r); }).join(' '); }
+  function showRules() {
+    show('rules');
+    $('rules').innerHTML = room.rules.map(function (r, i) {
+      return '<li><span class="sg">' + ruleIcon(r.icon) + '</span><span>' + L(r) + '</span><b>' + (i + 1) + '</b></li>';
+    }).join('');
+    say(t('rulesTitle') + '. ' + rulesText());
+  }
+
+  /* ================= daily planner + lunch ================= */
+  function duration(m) { var h = Math.floor(m / 60); m = m % 60; return h ? t('hours', { h: h, m: m }) : t('mins', { m: m }); }
+  function lunchLine() {
+    var n = nowMins(), s = mins(room.lunch.start), e = mins(room.lunch.end);
+    if (n < s) return { cls: '', text: t('lunchIn', { t: room.lunch.start, left: duration(s - n) }) };
+    if (n < e) return { cls: 'now', text: t('lunchNow', { t: room.lunch.end }) };
+    return { cls: '', text: t('lunchDone') };
+  }
+  function renderPlan() {
+    var ln = lunchLine(), n = nowMins(), plan = room.plan;
+    $('lunch').className = 'lunch ' + ln.cls;
+    $('lunch').innerHTML = '<span class="ico">' + planIcon('lunch') + '</span><span>' + ln.text + '</span>';
+    $('plan').innerHTML = plan.map(function (p, i) {
+      var s = mins(p.t), e = i + 1 < plan.length ? mins(plan[i + 1].t) : s + 60;
+      var cls = n >= e ? 'past' : n >= s ? 'now' : '';
+      if (p.kind === 'lunch') cls += ' lunch-row';
+      return '<li class="' + cls + '"><span class="ico">' + planIcon(p.kind) + '</span><time>' + p.t + '</time><span>' + L(p) + '</span>' +
+        (cls.indexOf('now') === 0 ? '<span class="tag-now">' + t('now') + '</span>' : '') + '</li>';
+    }).join('');
+  }
+  function showPlan() { show('plan'); renderPlan(); say(t('planTitle') + '. ' + lunchLine().text.replace('·', '.')); }
+
+  var remindedOn = null;
+  function checkLunch(force) {
+    var n = nowMins(), s = mins(room.lunch.start), today = new Date().toDateString();
+    var busy = current === 'launch' || current.indexOf('sc-') === 0;
+    if (force || (!busy && remindedOn !== today && n >= s - CONFIG.lunchRemindMinutes && n < s)) {
+      remindedOn = today;
+      $('remind-ico').innerHTML = planIcon('lunch');
+      $('remind-title').textContent = t('remindTitle');
+      $('remind-lead').textContent = t('remindLead', { t: room.lunch.start, where: L(room.lunch) });
+      $('remind').hidden = false;
+      say(t('sayRemind', { t: room.lunch.start, where: L(room.lunch) }));
+    }
+  }
+
+  /* ================= emergency exit: original site plan + moving arrows ================= */
+  var SVGNS = 'http://www.w3.org/2000/svg', segs = [], total = 0, arrows = [], animating = false, t0 = null;
+  var raf = window.requestAnimationFrame || function (fn) { return setTimeout(function () { fn(Date.now()); }, 33); };
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var GAP = 42, SPEED = 30;
+  function buildRoute(pts) {
+    segs = []; total = 0;
+    for (var i = 1; i < pts.length; i++) {
+      var dx = pts[i][0] - pts[i - 1][0], dy = pts[i][1] - pts[i - 1][1], len = Math.sqrt(dx * dx + dy * dy);
+      segs.push({ x: pts[i - 1][0], y: pts[i - 1][1], dx: dx / len, dy: dy / len, len: len, start: total, ang: Math.atan2(dy, dx) * 180 / Math.PI });
+      total += len;
+    }
+    var pstr = pts.map(function (p) { return p.join(','); }).join(' ');
+    $('route-under').setAttribute('points', pstr);
+    $('route-dots').setAttribute('points', pstr);
+    var g = $('arrows');
+    while (g.firstChild) g.removeChild(g.firstChild);
+    arrows = [];
+    for (var k = 0; k < Math.ceil(total / GAP) + 1; k++) {
+      var a = document.createElementNS(SVGNS, 'path');
+      a.setAttribute('d', 'M-7,-9 L6,0 L-7,9');
+      a.setAttribute('fill', 'none'); a.setAttribute('stroke', '#1F9D55'); a.setAttribute('stroke-width', '6');
+      a.setAttribute('stroke-linecap', 'round'); a.setAttribute('stroke-linejoin', 'round');
+      g.appendChild(a); arrows.push(a);
+    }
+  }
+  function at(d) {
+    for (var i = 0; i < segs.length; i++) {
+      var s = segs[i];
+      if (d <= s.start + s.len || i === segs.length - 1) { var u = d - s.start; return { x: s.x + s.dx * u, y: s.y + s.dy * u, ang: s.ang }; }
+    }
+  }
+  function placeArrows(phase) {
+    each(arrows, function (a, k) {
+      var d = phase + k * GAP;
+      if (d < 20 || d > total - 10) { a.setAttribute('opacity', '0'); return; }
+      var p = at(d);
+      a.setAttribute('transform', 'translate(' + p.x.toFixed(1) + ',' + p.y.toFixed(1) + ') rotate(' + p.ang + ')');
+      a.setAttribute('opacity', '1');
+    });
+  }
+  function loop(ts) {
+    if (!animating) return;
+    if (t0 === null) t0 = ts;
+    placeArrows(((ts - t0) / 1000 * SPEED) % GAP);
+    raf(loop);
+  }
+  function stopArrows() { animating = false; t0 = null; }
+  function exitText() { return t('sayExit') + ' ' + L(room.escape.steps).join(' '); }
+  function showExit() {
+    show('exit');
+    var e = room.escape, here = e.route[0], b = e.box;
+    buildRoute(e.route);
+    var hl = $('room-hl');
+    hl.setAttribute('x', b[0]); hl.setAttribute('y', b[1]); hl.setAttribute('width', b[2]); hl.setAttribute('height', b[3]);
+    $('here').setAttribute('cx', here[0]); $('here').setAttribute('cy', here[1]);
+    $('here-bg').setAttribute('x', here[0] - 55); $('here-bg').setAttribute('y', here[1] - 46);
+    $('here-label').setAttribute('x', here[0]); $('here-label').setAttribute('y', here[1] - 27);
+    $('exit-steps').innerHTML = L(e.steps).map(function (s, i) { return '<li><b>' + (i + 1) + '</b><span>' + s + '</span></li>'; }).join('') +
+      '<li class="goal">' + signImg('assembly') + '<span>' + t('goal') + '</span></li>';
+    if (reduce) placeArrows(GAP / 2); else { animating = true; raf(loop); }
+    raise('Room/EmergencyExit', { room: roomId });
+    say(exitText());
+  }
+
+  /* ================= human assistant ================= */
+  function postJSON(path, body) {
+    return new Promise(function (res, rej) {
+      var x = new XMLHttpRequest();
+      x.open('POST', CONFIG.backendUrl + path); x.timeout = 10000;
+      x.setRequestHeader('Content-Type', 'application/json');
+      x.onload = function () { if (x.status >= 200 && x.status < 300) { try { res(JSON.parse(x.responseText || '{}')); } catch (e) { res({}); } } else rej(new Error('HTTP ' + x.status)); };
+      x.onerror = x.ontimeout = function () { rej(new Error('Backend unreachable')); };
+      x.send(JSON.stringify(body));
+    });
+  }
+  function showHelp() {
+    var a = CONFIG.assistant;
+    show('help');
+    $('caller').className = 'caller';
+    $('caller-initials').textContent = initials(a.name);
+    $('help-title').textContent = t('helpCalling', { name: a.first });
+    $('help-lead').textContent = t('helpWait');
+    say(t('sayCalling', { name: a.first }));
+    var info = { room: roomId, reason: 'assistant', lang: LANG };
+    raise('Room/HelpRequested', info);
+    (onRobot ? postJSON('/help', info) : wait(1800)).then(guard(function () {
+      $('caller').className = 'caller arrived';
+      $('help-title').textContent = t('helpComing', { name: a.first });
+      say(t('sayComing', { name: a.first }));
+    }), guard(function () { $('help-title').textContent = t('helpFail', { name: a.first }); }));
+  }
+
+  /* ======================================================================================
+     PPE SAFETY CHECK – same pipeline as index.html (position → 3-2-1 photo → result).
+     Inside the room app the Sicherheits-Check tile is the start button, and "Nächste Person"
+     goes back to the room home.
+     ====================================================================================== */
+  var SC = CONFIG.safety;
+  var PPE = {
+    helmet:  { color: '#FFB938', de: { label: 'Helm',              acc: 'deinen Helm' },              en: { label: 'Helmet',         acc: 'your helmet' } },
+    goggles: { color: '#8E7CFF', de: { label: 'Schutzbrille',      acc: 'deine Schutzbrille' },       en: { label: 'Safety glasses', acc: 'your safety glasses' } },
+    vest:    { color: '#FF7A59', de: { label: 'Warnweste',         acc: 'deine Warnweste' },          en: { label: 'Hi-vis vest',    acc: 'your hi-vis vest' } },
+    gloves:  { color: '#22B8B0', de: { label: 'Handschuhe',        acc: 'deine Handschuhe' },         en: { label: 'Gloves',         acc: 'your gloves' } },
+    boots:   { color: '#4C8DFF', de: { label: 'Sicherheitsschuhe', acc: 'deine Sicherheitsschuhe' },  en: { label: 'Safety boots',   acc: 'your safety boots' } }
+  };
+  var PEOPLE = { francesca: { id: 'francesca', name: 'Francesca' }, jonas: { id: 'jonas', name: 'Jonas' }, visitor: { id: 'visitor-7f3', name: null } };
+  var state = { person: null };
+  function P(k) { return PPE[k][LANG]; }
+  function list(keys) {
+    var w = keys.map(function (k) { return P(k).acc; });
+    return w.length < 2 ? w.join('') : w.slice(0, -1).join(', ') + ' ' + t('and') + ' ' + w[w.length - 1];
+  }
+  function nameOf() { return state.person && state.person.name; }
+  function cn() { return nameOf() ? ', ' + nameOf() : ''; }
+  function tn(key, v) { v = v || {}; v.name = nameOf(); return v.name ? t(key + 'Name', v) : t(key, v); }
+
+  function pepperFace(mood) {
+    var eyes = mood === 'happy'
+      ? '<path d="M27 60Q40 44 53 60" fill="none" stroke="#4C8DFF" stroke-width="8" stroke-linecap="round"/><path d="M67 60Q80 44 93 60" fill="none" stroke="#4C8DFF" stroke-width="8" stroke-linecap="round"/>'
+      : '<circle cx="40" cy="56" r="13" fill="#23305A"/><circle cx="40" cy="56" r="13" fill="none" stroke="#4C8DFF" stroke-width="5"/><circle cx="44" cy="51" r="4" fill="#FFFFFF"/>' +
+        '<circle cx="80" cy="56" r="13" fill="#23305A"/><circle cx="80" cy="56" r="13" fill="none" stroke="#4C8DFF" stroke-width="5"/><circle cx="84" cy="51" r="4" fill="#FFFFFF"/>';
+    var mouth = mood === 'happy' ? '<path d="M46 80Q60 96 74 80Z" fill="#23305A"/>' : '<path d="M50 86Q58 82 70 86" fill="none" stroke="#23305A" stroke-width="4" stroke-linecap="round"/>';
+    return '<svg viewBox="0 0 120 120" aria-hidden="true" style="width:100%;height:100%;display:block">' +
+      '<rect x="2" y="44" width="10" height="30" rx="5" fill="#DCE5F3"/><rect x="108" y="44" width="10" height="30" rx="5" fill="#DCE5F3"/>' +
+      '<circle cx="60" cy="60" r="52" fill="#FFFFFF" stroke="#DCE5F3" stroke-width="4"/>' +
+      '<circle cx="26" cy="76" r="7" fill="#FFB4A3" opacity=".6"/><circle cx="94" cy="76" r="7" fill="#FFB4A3" opacity=".6"/>' + eyes + mouth + '</svg>';
+  }
+  var ICON = {
+    helmet: '<path d="M12 40C12 25 21 15 32 15C43 15 52 25 52 40Z" fill="#fff"/><rect x="8" y="40" width="48" height="7" rx="3.5" fill="#fff"/><rect x="30" y="15" width="4" height="25" fill="currentColor"/>',
+    goggles: '<rect x="5" y="29" width="54" height="6" rx="3" fill="#fff"/><rect x="10" y="22" width="44" height="21" rx="9" fill="#fff"/><rect x="14" y="26" width="15" height="12" rx="5" fill="currentColor"/><rect x="35" y="26" width="15" height="12" rx="5" fill="currentColor"/><path d="M28 43h8l-4-6z" fill="currentColor"/>',
+    vest: '<path d="M21 11h7l4 11 4-11h7l8 8v35H13V19z" fill="#fff"/><rect x="13" y="33" width="38" height="4" fill="currentColor"/><rect x="13" y="43" width="38" height="4" fill="currentColor"/><rect x="31" y="22" width="2" height="32" fill="currentColor"/>',
+    gloves: '<rect x="19" y="15" width="6" height="22" rx="3" fill="#fff"/><rect x="26" y="10" width="6" height="26" rx="3" fill="#fff"/><rect x="33" y="12" width="6" height="24" rx="3" fill="#fff"/><rect x="40" y="17" width="6" height="20" rx="3" fill="#fff"/><rect x="19" y="30" width="27" height="20" rx="6" fill="#fff"/><rect x="6" y="33" width="18" height="7" rx="3.5" transform="rotate(35 22 36)" fill="#fff"/><rect x="21" y="51" width="23" height="7" rx="1.5" fill="#fff"/>',
+    boots: '<path d="M17 9h17v29l15 6c4 1.6 7 4.5 7 8.5V54H13v-8l4-6z" fill="#fff"/><rect x="11" y="54" width="47" height="5" rx="2" fill="#fff"/><rect x="17" y="16" width="17" height="2.5" fill="currentColor"/>'
+  };
+  function ppeSign(key, size) {
+    var c = PPE[key].color;
+    return '<span class="sign ' + (size || '') + '" style="background:' + c + ';color:' + c + '"><svg viewBox="0 0 64 64" aria-hidden="true">' + ICON[key] + '</svg></span>';
+  }
+  function cardsHTML(keys) { return keys.map(function (k) { return '<div class="card">' + ppeSign(k, 's-xl') + '<b>' + P(k).label + '</b></div>'; }).join(''); }
+  function bodySVG() {
+    return '<svg class="body-svg" viewBox="0 0 200 440" aria-hidden="true"><g fill="#C7D5EE">' +
+      '<circle cx="100" cy="55" r="28"/><rect x="90" y="80" width="20" height="16"/><path d="M60 96Q100 84 140 96L148 222H52Z"/>' +
+      '<path d="M58 98L34 110L24 240L44 244L56 140Z"/><path d="M142 98L166 110L176 240L156 244L144 140Z"/>' +
+      '<circle cx="34" cy="252" r="12"/><circle cx="166" cy="252" r="12"/><path d="M54 218H98L96 412H66Z"/><path d="M102 218H146L134 412H104Z"/>' +
+      '<ellipse cx="78" cy="420" rx="20" ry="9"/><ellipse cx="122" cy="420" rx="20" ry="9"/></g>' +
+      '<circle cx="90" cy="52" r="3.5" fill="#23305A"/><circle cx="110" cy="52" r="3.5" fill="#23305A"/><path d="M91 65Q100 72 109 65" fill="none" stroke="#23305A" stroke-width="3" stroke-linecap="round"/></svg>';
+  }
+
+  /* memory: who was missing what (same key as index.html, so both agree) */
+  var MEM_KEY = 'pepper-ppe-pending', pending = {};
+  try { pending = JSON.parse(localStorage.getItem(MEM_KEY)) || {}; } catch (e) { pending = {}; }
+  function saveMemory() { try { localStorage.setItem(MEM_KEY, JSON.stringify(pending)); } catch (e) {} renderMemory(); }
+  function recall(id) {
+    var r = id && pending[id];
+    if (r && Date.now() - r.at > SC.rememberMinutes * 60000) { delete pending[id]; saveMemory(); r = null; }
+    return r || null;
+  }
+
+  /* live view */
+  var camStream = null;
+  function startLive() {
+    var img = $('sc-live-img'), vid = $('sc-live-video');
+    $('sc-live-fallback').hidden = false; $('sc-live-still').hidden = true; img.hidden = true; vid.hidden = true;
+    if (onRobot) {
+      img.onload = function () { img.hidden = false; $('sc-live-fallback').hidden = true; };
+      img.onerror = function () { img.hidden = true; $('sc-live-fallback').hidden = false; };
+      img.src = CONFIG.backendUrl + '/live.mjpg';
+      img.hidden = false;
+    } else if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false }).then(function (s) {
+        if (current !== 'sc-position') { s.getTracks().forEach(function (tr) { tr.stop(); }); return; }
+        camStream = s; vid.srcObject = s; vid.hidden = false; $('sc-live-fallback').hidden = true;
+      })['catch'](function () {});
+    }
+  }
+  function freezeLive() {
+    var vid = $('sc-live-video'), img = $('sc-live-img'), c = $('sc-live-still');
+    var src = !vid.hidden ? vid : (!img.hidden && img.complete ? img : null);
+    if (src) { try { c.getContext('2d').drawImage(src, 0, 0, c.width, c.height); c.hidden = false; } catch (e) {} }
+    stopLive();
+  }
+  function stopLive() {
+    if (camStream) { camStream.getTracks().forEach(function (tr) { tr.stop(); }); camStream = null; }
+    $('sc-live-video').hidden = true;
+    var img = $('sc-live-img'); img.onload = img.onerror = null; img.removeAttribute('src'); img.hidden = true;
+  }
+
+  /* backends */
+  function getJSON(path) {
+    return new Promise(function (res, rej) {
+      var x = new XMLHttpRequest();
+      x.open('GET', CONFIG.backendUrl + path); x.timeout = 10000;
+      x.onload = function () { if (x.status >= 200 && x.status < 300) { try { res(JSON.parse(x.responseText)); } catch (e) { rej(e); } } else rej(new Error('HTTP ' + x.status)); };
+      x.onerror = x.ontimeout = function () { rej(new Error('Backend unreachable')); };
+      x.send(null);
+    });
+  }
+  var HttpBackend = {
+    frameStatus: function () { return getJSON('/frame'); },
+    check: function () { return postJSON('/check', { required: SC.required }); },
+    requestHelp: function (info) { return postJSON('/help', info); }
+  };
+  var demo = { person: 'francesca', scan1: {}, scan2: {} };
+  var DemoBackend = {
+    frameStatus: function (n) {
+      var seq = ['none', 'step_back', 'step_back', 'move_left', 'move_left', 'ok'];
+      return wait(650).then(function () { return { hint: seq[Math.min(n, seq.length - 1)], person: n >= 2 ? PEOPLE[demo.person] : null }; });
+    },
+    check: function () {
+      return wait(1500).then(function () {
+        var p = PEOPLE[demo.person], src = recall(p.id) ? demo.scan2 : demo.scan1, items = {};
+        each(SC.required, function (k) { items[k] = !!src[k]; });
+        return { person: p, items: items };
+      });
+    },
+    requestHelp: function () { return wait(1500).then(function () { return { eta_min: 2 }; }); }
+  };
+  var Backend = DemoBackend;
+
+  function nextTimer(btnId, sec) {
+    var b = $(btnId);
+    b.hidden = false;
+    b.onclick = function () { goHome(false); };
+    countdown(sec, function (s) { b.innerHTML = t('nextBtn') + '<b>' + s + '</b>'; }, function () { goHome(false); });
+  }
+  function scFail(err) { if (window.console) console.error(err); show('sc-error'); say(t('sayErr')); }
+
+  var HINTS = {
+    none:        { cls: '',     fig: 'translateX(420px)' },
+    step_back:   { cls: 'move', fig: 'scale(1.45)', speak: true },
+    come_closer: { cls: 'move', fig: 'scale(.6)', speak: true },
+    move_left:   { cls: 'move', fig: 'translateX(110px)', speak: true },
+    move_right:  { cls: 'move', fig: 'translateX(-110px)', speak: true },
+    ok:          { cls: 'ok',   fig: 'none' }
+  };
+  var lastHint = 'none';
+  function setHint(h) {
+    var d = HINTS[h] || HINTS.none;
+    lastHint = HINTS[h] ? h : 'none';
+    $('sc-pos-hint').className = 'hint ' + d.cls;
+    $('sc-pos-hint').textContent = t('h_' + lastHint);
+    $('sc-pos-figure').style.transform = d.fig;
+    $('sc-pos-figure').style.webkitTransform = d.fig;
+  }
+  function showName(p) {
+    var tag = $('sc-live-name');
+    if (!p || !p.name) { tag.hidden = true; return; }
+    tag.textContent = recall(p.id) ? t('backName', { name: p.name }) : t('hiName', { name: p.name });
+    tag.hidden = false;
+  }
+
+  function scStart() {
+    state = { person: null };
+    show('sc-position');
+    redraw = function () { setHint(lastHint); showName(state.person); };
+    $('sc-live-name').hidden = true; $('sc-live-count').hidden = true; $('sc-live-flash').hidden = true; $('sc-live-busy').hidden = true;
+    setHint('none');
+    startLive();
+    raise('Room/OpenSafetyCheck', { room: roomId });
+    say(t('sayPos'));
+    var n = 0, okCount = 0, last = null;
+    function poll() {
+      Backend.frameStatus(n++).then(guard(function (r) {
+        var p = r.person;
+        if (p && (!state.person || state.person.id !== p.id)) {
+          state.person = p; showName(p);
+          if (p.name) say(recall(p.id) ? t('sayBack', { cn: cn() }) : t('sayHi', { name: p.name }));
+        }
+        if (r.hint !== last) { setHint(r.hint); if (last !== null && HINTS[r.hint] && HINTS[r.hint].speak) say(t('h_' + r.hint).replace(/[←→]/g, '')); last = r.hint; }
+        if (r.hint === 'ok') { if (++okCount >= 2) return snap(); } else okCount = 0;
+        later(poll, 450);
+      }))['catch'](guard(scFail));
+    }
+    later(poll, 2000);
+  }
+  function snap() {
+    say(t('sayFreeze'));
+    var c = $('sc-live-count');
+    countdown(3, function (s) {
+      c.hidden = !s; c.textContent = s;
+      c.style.animation = 'none'; void c.offsetWidth; c.style.animation = '';
+    }, function () {
+      $('sc-live-flash').hidden = false;
+      freezeLive();
+      $('sc-live-busy').hidden = false;
+      Backend.check().then(guard(scResult))['catch'](guard(scFail));
+    });
+  }
+  function scResult(r) {
+    var p = r.person || state.person, id = p && p.id;
+    state.person = p;
+    var rec = recall(id), visit = rec ? rec.visits + 1 : 1;
+    var missing = filter(SC.required, function (k) { return !r.items[k]; });
+    if (id) {
+      if (missing.length) pending[id] = { missing: missing, visits: visit, at: Date.now(), name: p.name || 'Visitor' };
+      else delete pending[id];
+      saveMemory();
+    }
+    raise('PPECheck/Result', { person: id || null, visit: visit, missing: missing, room: roomId });
+    if (!missing.length) scPass();
+    else if (visit === 1) scMissing(missing);
+    else scStill(missing, visit);
+  }
+  function confetti() {
+    var colors = ['#FF7A59', '#FFB938', '#2BC48A', '#4C8DFF', '#8E7CFF', '#22B8B0'], html = '';
+    for (var i = 0; i < 46; i++) {
+      html += '<i style="left:' + Math.round(Math.random() * 100) + '%;background:' + colors[i % colors.length] +
+        ';animation-delay:' + (Math.random() * .8).toFixed(2) + 's;animation-duration:' + (2.2 + Math.random() * 1.6).toFixed(2) + 's"></i>';
+    }
+    $('sc-confetti').innerHTML = html;
+  }
+  function scPass() {
+    show('sc-pass');
+    confetti();
+    redraw = function () { $('sc-pass-sub').textContent = t('passSub', { cn: cn() }); };
+    redraw();
+    say(t('sayPass', { cn: cn() }));
+    nextTimer('sc-btn-next-pass', SC.nextAfterPass);
+  }
+  function scMissing(missing) {
+    show('sc-missing');
+    redraw = function () { $('sc-miss-title').textContent = tn('missTitle'); $('sc-miss-cards').innerHTML = cardsHTML(missing); };
+    redraw();
+    say(tn('sayMiss', { list: list(missing) }));
+    nextTimer('sc-btn-next-miss', SC.nextAfterMissing);
+  }
+  function scStill(missing, visit) {
+    var total = SC.callDelay, C = 326.7, a = CONFIG.assistant, called = false, status = null;
+    show('sc-still');
+    function setStatus(key, v) { status = [key, v]; $('sc-still-status').textContent = t(key, v); }
+    redraw = function () {
+      $('sc-still-title').textContent = tn('stillTitle');
+      $('sc-still-cards').innerHTML = cardsHTML(missing);
+      if (status) setStatus(status[0], status[1]);
+    };
+    redraw();
+    $('sc-still-ring-wrap').hidden = false; $('sc-caller').hidden = true; $('sc-caller').className = 'caller';
+    $('sc-caller-initials').textContent = initials(a.name);
+    $('sc-btn-call-now').hidden = false; $('sc-btn-next-still').hidden = true;
+    say(t('sayStill', { list: list(missing), helper: a.first }));
+    function call() {
+      if (called) return;
+      called = true;
+      stopFlow();
+      var p = state.person;
+      $('sc-still-ring-wrap').hidden = true; $('sc-caller').hidden = false; $('sc-btn-call-now').hidden = true;
+      setStatus('calling', { helper: a.first });
+      var info = { person: p ? p.id : null, name: p ? p.name : null, missing: missing, visit: visit, lang: LANG, room: roomId };
+      raise('PPECheck/HelpRequested', info);
+      Backend.requestHelp(info).then(guard(function () {
+        $('sc-caller').className = 'caller arrived';
+        setStatus('called', { helper: a.first });
+        say(t('sayCalled', { helper: a.first }));
+        nextTimer('sc-btn-next-still', SC.nextAfterCall);
+      }))['catch'](guard(function () {
+        setStatus('callFail', { helper: a.first, ext: '2140' });
+        say(t('sayCallFail', { helper: a.first, ext: '2140' }));
+        nextTimer('sc-btn-next-still', SC.nextAfterCall);
+      }));
+    }
+    $('sc-btn-call-now').onclick = call;
+    countdown(total, function (s) {
+      $('sc-still-sec').textContent = s;
+      $('sc-still-ring').style.strokeDashoffset = C * (1 - s / total);
+      setStatus('callIn', { helper: a.first, s: s });
+    }, call);
+  }
+
+  /* ================= language + room ================= */
+  var LANG_KEY = 'pepper-ppe-lang';   // shared with the safety check so the choice carries over
+  function setLang(l) {
+    LANG = l;
+    try { localStorage.setItem(LANG_KEY, l); } catch (e) {}
+    document.documentElement.lang = l;
+    each(document.querySelectorAll('[data-t]'), function (el) { el.textContent = t(el.getAttribute('data-t')); });
+    each(document.querySelectorAll('[data-th]'), function (el) { el.innerHTML = t(el.getAttribute('data-th')); });
+    each(document.querySelectorAll('.lang button'), function (b) { b.classList.toggle('on', b.getAttribute('data-lang') === l); });
+    each(document.querySelectorAll('.back, .sc-back'), function (b) { b.innerHTML = BACK_SVG + t('back'); });
+    $('btn-info-close').textContent = t('close');
+    $('btn-info-say').innerHTML = SPEAK_SVG + t('listen');
+    $('btn-rules-say').innerHTML = SPEAK_SVG + t('listen');
+    $('btn-exit-say').innerHTML = SPEAK_SVG + t('listen');
+    setRobotLang();
+    renderRoom();
+    /* redraw the open screen in the new language */
+    if (redraw) redraw();
+    else if (current === 'colors') showColors();
+    else if (current === 'signs') showSigns(pickedCat);
+    else if (current === 'rules') showRules();
+    else if (current === 'plan') showPlan();
+    else if (current === 'exit') showExit();
+    if (!$('info').hidden && infoId) showInfo(infoId);
+  }
+  function renderRoom() { $('room-name').textContent = L(room); clock(); }
+  function setRoom(id) { roomId = ROOMS[id] ? id : CONFIG.room; room = ROOMS[roomId]; renderRoom(); }
+  function clock() {
+    var d = new Date(), days = t('days'), months = t('months');
+    $('clock').textContent = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+    $('date').textContent = LANG === 'de' ? days[d.getDay()] + ', ' + d.getDate() + '. ' + months[d.getMonth()] : days[d.getDay()] + ', ' + d.getDate() + ' ' + months[d.getMonth()];
+    if (current === 'plan') renderPlan();
+  }
+
+  /* ================= wiring ================= */
+  $('ic-help').innerHTML = glyph('helper', '#8E7CFF');
+  $('ic-pictos').innerHTML = '<svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="27" cy="27" r="21" fill="' + SIGN_BLUE + '"/><rect x="54" y="6" width="40" height="40" rx="6" fill="' + SIGN_RED + '"/><rect x="6" y="54" width="42" height="40" rx="6" fill="' + SIGN_GREEN + '"/><path d="M74 54L95 92H53Z" fill="' + SIGN_YELLOW + '" stroke="' + INK + '" stroke-width="4" stroke-linejoin="round"/></svg>';
+  $('ic-safety').innerHTML = disc('#FF7A59', '<g transform="translate(18 18)" style="color:#FF7A59">' + ICON.helmet + '</g>');
+  $('ic-rules').innerHTML = glyph('clipboard', '#22B8B0');
+  $('ic-plan').innerHTML = glyph('calendar', '#4C8DFF');
+  each(document.querySelectorAll('.face-slot'), function (el) { el.innerHTML = pepperFace(el.getAttribute('data-mood')); });
+  $('sc-pos-figure').innerHTML = bodySVG();
+
+  $('btn-start').onclick = function () { goHome(true); };
+  $('btn-help').onclick = showHelp;
+  $('btn-exit').onclick = showExit;
+  $('tile-pictos').onclick = showColors;
+  $('tile-safety').onclick = scStart;
+  $('tile-rules').onclick = showRules;
+  $('tile-plan').onclick = showPlan;
+  $('btn-info-close').onclick = closeInfo;
+  $('btn-info-say').onclick = function () { say(infoText(infoId)); };
+  $('btn-rules-say').onclick = function () { say(rulesText()); };
+  $('btn-exit-say').onclick = function () { say(exitText()); };
+  $('btn-remind-ok').onclick = function () { stopSpeech(); $('remind').hidden = true; };
+  $('sc-back').onclick = function () { goHome(false); };
+  $('sc-btn-err-retry').onclick = scStart;
+  $('sc-btn-err-home').onclick = function () { goHome(false); };
+  var GO = { home: function () { goHome(false); }, colors: showColors };
+  each(document.querySelectorAll('[data-go]'), function (b) { b.onclick = function () { GO[b.getAttribute('data-go')](); }; });
+  each(document.querySelectorAll('.lang button'), function (b) { b.onclick = function () { setLang(b.getAttribute('data-lang')); }; });
+  document.addEventListener('touchstart', touch, true);
+  document.addEventListener('mousedown', touch, true);
+  setInterval(function () { clock(); checkLunch(false); }, 20000);
+
+  function fit() {
+    var kiosk = document.body.classList.contains('kiosk'), holder = $('stage-holder');
+    var s = kiosk ? Math.min(window.innerWidth / 1280, window.innerHeight / 800) : Math.min(holder.clientWidth / 1280, 1);
+    $('stage').style.transform = 'scale(' + s + ')';
+    $('stage').style.webkitTransform = 'scale(' + s + ')';
+    holder.style.height = (800 * s) + 'px';
+  }
+  window.addEventListener('resize', fit);
+
+  /* ================= demo panel ================= */
+  function renderMemory() {
+    var ids = [];
+    for (var id in pending) if (pending.hasOwnProperty(id)) ids.push(id);
+    $('demo-memory').innerHTML = ids.length ? ids.map(function (id) {
+      var r = pending[id];
+      return '<b>' + r.name + '</b>: ' + r.missing.map(function (k) { return PPE[k].en.label.toLowerCase(); }).join(', ') + ' (visit ' + r.visits + ')';
+    }).join('<br>') : 'Nobody yet.';
+  }
+  var sel = $('demo-room');
+  for (var rid in ROOMS) if (ROOMS.hasOwnProperty(rid)) { var o = document.createElement('option'); o.value = rid; o.textContent = ROOMS[rid].en + '  (?room=' + rid + ')'; sel.appendChild(o); }
+  sel.onchange = function () { setRoom(this.value); goHome(false); };
+  $('demo-lunch').onclick = function () { if (current === 'launch' || current.indexOf('sc-') === 0) goHome(false); checkLunch(true); };
+  $('demo-voice').onchange = function () { demoVoice = this.checked; if (!this.checked) stopSpeech(); };
+  $('demo-jump').onchange = function () {
+    var v = this.value; this.value = '';
+    ({ launch: function () { show('launch'); }, home: GO.home, colors: showColors, rules: showRules, plan: showPlan, exit: showExit, help: showHelp, safety: scStart }[v] || function () {})();
+  };
+  $('demo-person').onchange = function () { demo.person = this.value; };
+  $('det-body').innerHTML = SC.required.map(function (k) {
+    return '<tr><td>' + PPE[k].en.label + '</td><td><input type="checkbox" id="det-scan1-' + k + '" aria-label="' + PPE[k].en.label + ' seen on 1st visit"></td>' +
+      '<td><input type="checkbox" id="det-scan2-' + k + '" aria-label="' + PPE[k].en.label + ' seen on return visit"></td></tr>';
+  }).join('');
+  each(SC.required, function (k) {
+    demo.scan1[k] = k !== 'gloves'; demo.scan2[k] = true;   // default: gloves missing first, all good on return
+    $('det-scan1-' + k).checked = demo.scan1[k]; $('det-scan2-' + k).checked = demo.scan2[k];
+    $('det-scan1-' + k).onchange = function () { demo.scan1[k] = this.checked; };
+    $('det-scan2-' + k).onchange = function () { demo.scan2[k] = this.checked; };
+  });
+  $('demo-forget').onclick = function () { pending = {}; saveMemory(); };
+  renderMemory();
+
+  /* ================= boot ================= */
+  var m = /[?&]room=([\w-]+)/.exec(location.search);
+  setRoom(m ? m[1] : CONFIG.room);
+  sel.value = roomId;
+  var saved = null;
+  try { saved = localStorage.getItem(LANG_KEY); } catch (e) {}
+  setLang(T[saved] ? saved : CONFIG.defaultLang);
+  show('launch');
+  fit();
+  connectRobot(function (ok) { if (ok) { onRobot = true; Backend = HttpBackend; document.body.classList.add('kiosk'); fit(); } });
+})();
+</script>
+</body>
+</html>

@@ -41,3 +41,22 @@
 ## Things to edit
 
 `CONFIG` (required items, timers, voice pitch/speed, helper), `T.de` / `T.en` (all texts, including the wait-spot text), `PPE` (labels per language).
+
+---
+
+# Room assistant (`html/room.html`)
+
+The main UI for each room. One file, one address per room:
+
+`room.html?room=werkstatt-1` · `werkstatt-2` · `speisesaal` · `sanitaer`
+
+- **Launch page:** only the Start button.
+- **Room home:** time & date + room name header, **Hilfe rufen** (top left), **Notausgang** (top right), and 4 tiles: Piktogramme, Sicherheits-Check, Sicherheits-Regeln, Tagesplan.
+- **Piktogramme:** colour (blue/red/green/yellow) → that room's signs → text popup (read aloud). *Schließen* goes back to the room home.
+- **Sicherheits-Check:** the PPE safety check pipeline, built in (same flow as `index.html`). *Nächste Person* returns to the room home.
+- **Tagesplan:** the day's plan with the current block and a lunch countdown. A reminder pops up 10 min before lunch.
+- **Notausgang:** the original site plan (`assets/lageplan.jpg`) with the route, moving arrows and the assembly point, read out in German.
+- **Hilfe rufen:** raises `Room/HelpRequested` and POSTs `/help` `{room, reason, lang}`.
+
+Assets: `assets/signs/*.svg` (official ISO 7010 signs) and `assets/lageplan.jpg` (the site plan). Copy the whole `html/` folder to Pepper.
+Daily plans, rules, lunch times and the escape routes / assembly point are **examples**. Check the routes against the official escape plan.
