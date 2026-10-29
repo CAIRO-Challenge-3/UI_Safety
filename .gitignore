@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+.vscode/
+*.log
+# YOLO weights downloaded at runtime (remove this line if you want to commit them)
+*.pt
