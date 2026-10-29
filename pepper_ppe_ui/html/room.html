@@ -112,6 +112,13 @@ body.kiosk #stage-holder { margin: 0; border-radius: 0; box-shadow: none; }
 .back svg { width: 34px; height: 34px; margin-right: 10px; }
 .bar h1 { flex: 1; margin: 0 0 0 26px; font-size: 46px; font-weight: 800; line-height: 1.05; }
 .speak-btn { min-height: 80px; padding: 0 28px 0 22px; font-size: 26px; }
+/* sub-pages: title bar stays put, content below scrolls (finger swipe or the wide scrollbar) */
+.screen.page.on { display: flex; flex-direction: column; padding-bottom: 0; }
+.page .bar { flex-shrink: 0; }
+.scroll { position: relative; flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 6px 12px 32px 0; }
+.scroll::-webkit-scrollbar { width: 22px; }
+.scroll::-webkit-scrollbar-track { background: #DCE5F3; border-radius: 11px; margin: 4px 0 24px; }
+.scroll::-webkit-scrollbar-thumb { background: #6B7799; border-radius: 11px; border: 4px solid #DCE5F3; }
 
 /* ---------- room home (wireframe) ---------- */
 .home { position: relative; height: 100%; }
@@ -186,7 +193,8 @@ body.kiosk #stage-holder { margin: 0; border-radius: 0; box-shadow: none; }
 .plan { list-style: none; margin: 16px 0 0; padding: 0; }
 .plan li { display: flex; align-items: center; margin-bottom: 8px; padding: 8px 26px 8px 8px; border-radius: 999px; background: #FFFFFF; font-size: 25px; font-weight: 800; box-shadow: 0 4px 12px rgba(35,48,90,.05); }
 .plan .ico { width: 56px; height: 56px; margin-right: 18px; flex-shrink: 0; }
-.plan time { width: 150px; flex-shrink: 0; font-variant-numeric: tabular-nums; color: #6B7799; }
+.plan time { width: 200px; flex-shrink: 0; font-variant-numeric: tabular-nums; color: #6B7799; }
+.panel input[type=time] { padding: 7px 10px; background: #F4F8FF; color: #23305A; border: 2px solid #DCE5F3; border-radius: 12px; font: inherit; }
 .plan li.past { opacity: .5; }
 .plan li.now { background: #23305A; color: #FFFFFF; }
 .plan li.now time { color: #C9D6EC; }
@@ -265,7 +273,7 @@ body.kiosk #stage-holder { margin: 0; border-radius: 0; box-shadow: none; }
 .sc .confetti { position: absolute; top: 0; left: 0; right: 0; bottom: 0; overflow: hidden; pointer-events: none; }
 .sc .confetti i { position: absolute; top: -30px; width: 14px; height: 22px; border-radius: 4px; animation: fall 3s ease-in forwards; }
 @keyframes fall { to { transform: translateY(860px) rotate(540deg); opacity: 0; } }
-.sc .cards { display: flex; justify-content: center; margin: 40px 0 50px; }
+.sc .cards { display: flex; flex-wrap: wrap; justify-content: center; margin: 40px 0 50px; }
 .sc .card { width: 240px; margin: 0 12px; padding: 26px 16px 22px; text-align: center; background: #FFFFFF; border-radius: 34px; box-shadow: 0 10px 28px rgba(35,48,90,.08); animation: hop .6s cubic-bezier(.2,1.6,.4,1) both; }
 .sc .card:nth-child(2) { animation-delay: .1s; } .sc .card:nth-child(3) { animation-delay: .2s; } .sc .card:nth-child(4) { animation-delay: .3s; } .sc .card:nth-child(5) { animation-delay: .4s; }
 .sc .card b { display: block; margin-top: 16px; font-size: 30px; font-weight: 800; }
@@ -334,34 +342,34 @@ body.kiosk #stage-holder { margin: 0; border-radius: 0; box-shadow: none; }
       </section>
 
       <!-- 2 · pictograms step 2: pick a colour -->
-      <section class="screen" id="s-colors">
+      <section class="screen page" id="s-colors">
         <div class="bar"><button class="btn btn-soft back" type="button" data-go="home"></button><h1 class="display" data-t="pickColor"></h1></div>
-        <div class="colors" id="colors"></div>
+        <div class="scroll"><div class="colors" id="colors"></div></div>
       </section>
 
       <!-- 3 · pictograms step 3: signs of that colour -->
-      <section class="screen" id="s-signs">
+      <section class="screen page" id="s-signs">
         <div class="bar"><button class="btn btn-soft back" type="button" data-go="colors"></button><h1 class="display" id="signs-title"></h1></div>
-        <div class="signs" id="signs"></div>
+        <div class="scroll"><div class="signs" id="signs"></div></div>
       </section>
 
       <!-- safety rules -->
-      <section class="screen" id="s-rules">
+      <section class="screen page" id="s-rules">
         <div class="bar"><button class="btn btn-soft back" type="button" data-go="home"></button><h1 class="display" data-t="rulesTitle"></h1><button class="btn speak-btn" id="btn-rules-say" type="button"></button></div>
-        <ul class="rules" id="rules"></ul>
+        <div class="scroll"><ul class="rules" id="rules"></ul></div>
       </section>
 
       <!-- daily planner -->
-      <section class="screen" id="s-plan">
+      <section class="screen page" id="s-plan">
         <div class="bar"><button class="btn btn-soft back" type="button" data-go="home"></button><h1 class="display" data-t="planTitle"></h1></div>
-        <div class="lunch" id="lunch"></div>
-        <ol class="plan" id="plan"></ol>
+        <div class="lunch" id="lunch" style="flex-shrink:0"></div>
+        <div class="scroll" id="plan-scroll"><ol class="plan" id="plan"></ol></div>
       </section>
 
       <!-- emergency exit: original site plan (Erdgeschoss) with the route drawn on top -->
-      <section class="screen" id="s-exit">
+      <section class="screen page" id="s-exit">
         <div class="bar"><button class="btn btn-soft back" type="button" data-go="home"></button><h1 class="display" data-t="exitTitle"></h1><button class="btn btn-green speak-btn" id="btn-exit-say" type="button"></button></div>
-        <div class="emg">
+        <div class="scroll"><div class="emg">
           <div class="mapbox">
             <svg class="map" id="map" viewBox="0 260 660 610" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" aria-label="Lageplan Erdgeschoss mit Fluchtweg">
               <image xlink:href="assets/lageplan.jpg" href="assets/lageplan.jpg" x="0" y="0" width="1024" height="1024"/>
@@ -379,7 +387,7 @@ body.kiosk #stage-holder { margin: 0; border-radius: 0; box-shadow: none; }
             </svg>
           </div>
           <ol class="steps" id="exit-steps" style="flex:1;min-width:0"></ol>
-        </div>
+        </div></div>
       </section>
 
       <!-- human assistant -->
@@ -500,6 +508,8 @@ body.kiosk #stage-holder { margin: 0; border-radius: 0; box-shadow: none; }
     <select id="demo-room"></select>
     <h3>Try</h3>
     <button type="button" class="pbtn" id="demo-lunch">Show lunch reminder now</button>
+    <h3>Time of day (planner test)</h3>
+    <input type="time" id="demo-time" aria-label="Pretend time"> <button type="button" class="pbtn small" id="demo-realtime">Real time</button>
     <h3>Jump to a screen</h3>
     <select id="demo-jump">
       <option value="">Choose a screen…</option>
@@ -680,7 +690,7 @@ body.kiosk #stage-holder { margin: 0; border-radius: 0; box-shadow: none; }
       { t: '15:00', kind: 'home', de: 'Feierabend', en: 'Home time' }
     ];
   }
-  var LUNCH_WORK = { start: '12:00', end: '12:45', de: 'Im Speisesaal', en: 'In the dining hall' };
+  var LUNCH_WORK = { de: 'Im Speisesaal', en: 'In the dining hall' };   // where; the time comes from the plan's lunch entry
   var FRONT = [[325, 685], [325, 815]];   // walkway from the building front to the assembly point
 
   var ROOMS = {
@@ -714,7 +724,7 @@ body.kiosk #stage-holder { margin: 0; border-radius: 0; box-shadow: none; }
         { t: '14:00', kind: 'break', de: 'Kaffeepause', en: 'Coffee break' },
         { t: '15:00', kind: 'home', de: 'Feierabend', en: 'Home time' }
       ],
-      lunch: { start: '12:00', end: '12:45', de: 'Hier im Speisesaal', en: 'Right here in the dining hall' },
+      lunch: { de: 'Hier im Speisesaal', en: 'Right here in the dining hall' },
       escape: { box: [237, 292, 98, 133], route: [[286, 360], [286, 685]].concat(FRONT), steps: FRONT_ESCAPE }
     },
     sanitaer: {
@@ -734,7 +744,7 @@ body.kiosk #stage-holder { margin: 0; border-radius: 0; box-shadow: none; }
         { t: '14:30', kind: 'clean', de: 'Aufräumen und sauber machen', en: 'Tidy up and clean' },
         { t: '15:00', kind: 'home', de: 'Feierabend', en: 'Home time' }
       ],
-      lunch: { start: '12:00', end: '12:45', de: 'Im Speisesaal', en: 'In the dining hall' },
+      lunch: { de: 'Im Speisesaal', en: 'In the dining hall' },
       escape: { box: [368, 402, 90, 63], route: [[413, 433], [350, 433], [350, 575], [286, 575], [286, 685]].concat(FRONT),
         steps: { de: ['Bleib ruhig. Brauchst du Hilfe? Ruf laut.', 'Geh raus in den Flur und dann geradeaus bis zum Foyer.', 'Geh durch den Haupteingang nach draußen.', 'Geh geradeaus zum Sammelplatz an der Straße und warte dort.'],
                  en: ['Stay calm. Need help? Call out loud.', 'Go out into the corridor and straight on to the foyer.', 'Go outside through the main entrance.', 'Go straight on to the assembly point by the street and wait there.'] } }
@@ -763,7 +773,7 @@ body.kiosk #stage-holder { margin: 0; border-radius: 0; box-shadow: none; }
   function glyph(name, color) { return disc(color, '<g style="color:' + color + '">' + GLYPH[name] + '</g>'); }
   var SIGN_FILES = { gloves: 1, goggles: 1, wash: 1, trash: 1, hot: 1 };
   function ruleIcon(id) { return SIGN_FILES[id] ? signImg(id) : glyph(id, '#8E7CFF'); }
-  var PLAN_COLOR = { arrive: '#2BC48A', work: '#4C8DFF', break: '#FFB938', lunch: '#FF7A59', clean: '#22B8B0', home: '#8E7CFF', care: '#FF8FB1' };
+  var PLAN_COLOR = { arrive: '#2BC48A', work: '#4C8DFF', 'break': '#FFB938', lunch: '#FF7A59', clean: '#22B8B0', home: '#8E7CFF', care: '#FF8FB1' };
   function planIcon(kind) { return glyph(kind === 'break' ? 'coffee' : kind, PLAN_COLOR[kind]); }
   var SIGN_BLUE = '#1E5BB8', SIGN_RED = '#D7322F', SIGN_GREEN = '#1F9D55', SIGN_YELLOW = '#FFD400', INK = '#1A1A1A';
   var COLOR_SHAPE = {
@@ -788,7 +798,9 @@ body.kiosk #stage-holder { margin: 0; border-radius: 0; box-shadow: none; }
   function L(obj) { return obj[LANG] || obj.de; }
   function initials(full) { return full.split(' ').map(function (w) { return w.charAt(0); }).join('').slice(0, 2); }
   function mins(hhmm) { var p = hhmm.split(':'); return +p[0] * 60 + +p[1]; }
-  function nowMins() { var d = new Date(); return d.getHours() * 60 + d.getMinutes(); }
+  var simMins = null;   // demo panel: pretend it is this time of day
+  function nowMins() { if (simMins !== null) return simMins; var d = new Date(); return d.getHours() * 60 + d.getMinutes(); }
+  function hhmm(m) { return ('0' + Math.floor(m / 60)).slice(-2) + ':' + ('0' + m % 60).slice(-2); }
   function wait(ms) { return new Promise(function (res) { setTimeout(res, ms); }); }
 
   /* ================= robot link + voice (Pepper built-in TTS) ================= */
@@ -907,37 +919,51 @@ body.kiosk #stage-holder { margin: 0; border-radius: 0; box-shadow: none; }
 
   /* ================= daily planner + lunch ================= */
   function duration(m) { var h = Math.floor(m / 60); m = m % 60; return h ? t('hours', { h: h, m: m }) : t('mins', { m: m }); }
+  /* one source of truth: each block runs until the next one starts; the last one (Feierabend) until midnight */
+  function blocks() {
+    return room.plan.map(function (p, i) {
+      var next = room.plan[i + 1];
+      return { p: p, start: mins(p.t), end: next ? mins(next.t) : 24 * 60, last: !next };
+    });
+  }
+  function lunchTimes() { var b = filter(blocks(), function (x) { return x.p.kind === 'lunch'; })[0]; return { start: b.start, end: b.end }; }
   function lunchLine() {
-    var n = nowMins(), s = mins(room.lunch.start), e = mins(room.lunch.end);
-    if (n < s) return { cls: '', text: t('lunchIn', { t: room.lunch.start, left: duration(s - n) }) };
-    if (n < e) return { cls: 'now', text: t('lunchNow', { t: room.lunch.end }) };
+    var n = nowMins(), l = lunchTimes();
+    if (n < l.start) return { cls: '', text: t('lunchIn', { t: hhmm(l.start), left: duration(l.start - n) }) };
+    if (n < l.end) return { cls: 'now', text: t('lunchNow', { t: hhmm(l.end) }) };
     return { cls: '', text: t('lunchDone') };
   }
   function renderPlan() {
-    var ln = lunchLine(), n = nowMins(), plan = room.plan;
+    var ln = lunchLine(), n = nowMins();
     $('lunch').className = 'lunch ' + ln.cls;
     $('lunch').innerHTML = '<span class="ico">' + planIcon('lunch') + '</span><span>' + ln.text + '</span>';
-    $('plan').innerHTML = plan.map(function (p, i) {
-      var s = mins(p.t), e = i + 1 < plan.length ? mins(plan[i + 1].t) : s + 60;
-      var cls = n >= e ? 'past' : n >= s ? 'now' : '';
+    $('plan').innerHTML = blocks().map(function (b) {
+      var p = b.p, now = n >= b.start && n < b.end;
+      var cls = n >= b.end ? 'past' : now ? 'now' : '';
       if (p.kind === 'lunch') cls += ' lunch-row';
-      return '<li class="' + cls + '"><span class="ico">' + planIcon(p.kind) + '</span><time>' + p.t + '</time><span>' + L(p) + '</span>' +
-        (cls.indexOf('now') === 0 ? '<span class="tag-now">' + t('now') + '</span>' : '') + '</li>';
+      return '<li class="' + cls + '"><span class="ico">' + planIcon(p.kind) + '</span><time>' + p.t + (b.last ? '' : '–' + hhmm(b.end)) + '</time><span>' + L(p) + '</span>' +
+        (now ? '<span class="tag-now">' + t('now') + '</span>' : '') + '</li>';
     }).join('');
   }
-  function showPlan() { show('plan'); renderPlan(); say(t('planTitle') + '. ' + lunchLine().text.replace('·', '.')); }
+  function showPlan() {
+    show('plan');
+    renderPlan();
+    var now = document.querySelector('#plan li.now'), box = $('plan-scroll');   // bring "Jetzt" into view
+    box.scrollTop = now ? Math.max(0, now.offsetTop - 80) : 0;
+    say(t('planTitle') + '. ' + lunchLine().text.replace('·', '.'));
+  }
 
   var remindedOn = null;
   function checkLunch(force) {
-    var n = nowMins(), s = mins(room.lunch.start), today = new Date().toDateString();
+    var n = nowMins(), s = lunchTimes().start, at = hhmm(s), today = new Date().toDateString();
     var busy = current === 'launch' || current.indexOf('sc-') === 0;
     if (force || (!busy && remindedOn !== today && n >= s - CONFIG.lunchRemindMinutes && n < s)) {
       remindedOn = today;
       $('remind-ico').innerHTML = planIcon('lunch');
       $('remind-title').textContent = t('remindTitle');
-      $('remind-lead').textContent = t('remindLead', { t: room.lunch.start, where: L(room.lunch) });
+      $('remind-lead').textContent = t('remindLead', { t: at, where: L(room.lunch) });
       $('remind').hidden = false;
-      say(t('sayRemind', { t: room.lunch.start, where: L(room.lunch) }));
+      say(t('sayRemind', { t: at, where: L(room.lunch) }));
     }
   }
 
@@ -1110,12 +1136,8 @@ body.kiosk #stage-holder { margin: 0; border-radius: 0; box-shadow: none; }
       img.onerror = function () { img.hidden = true; $('sc-live-fallback').hidden = false; };
       img.src = CONFIG.backendUrl + '/live.mjpg';
       img.hidden = false;
-    } else if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false }).then(function (s) {
-        if (current !== 'sc-position') { s.getTracks().forEach(function (tr) { tr.stop(); }); return; }
-        camStream = s; vid.srcObject = s; vid.hidden = false; $('sc-live-fallback').hidden = true;
-      })['catch'](function () {});
     }
+    /* in the browser demo there is no camera: the animated stand-in figure shows the positioning */
   }
   function freezeLive() {
     var vid = $('sc-live-video'), img = $('sc-live-img'), c = $('sc-live-still');
@@ -1339,7 +1361,7 @@ body.kiosk #stage-holder { margin: 0; border-radius: 0; box-shadow: none; }
   function setRoom(id) { roomId = ROOMS[id] ? id : CONFIG.room; room = ROOMS[roomId]; renderRoom(); }
   function clock() {
     var d = new Date(), days = t('days'), months = t('months');
-    $('clock').textContent = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+    $('clock').textContent = hhmm(nowMins());
     $('date').textContent = LANG === 'de' ? days[d.getDay()] + ', ' + d.getDate() + '. ' + months[d.getMonth()] : days[d.getDay()] + ', ' + d.getDate() + ' ' + months[d.getMonth()];
     if (current === 'plan') renderPlan();
   }
@@ -1373,7 +1395,8 @@ body.kiosk #stage-holder { margin: 0; border-radius: 0; box-shadow: none; }
   each(document.querySelectorAll('.lang button'), function (b) { b.onclick = function () { setLang(b.getAttribute('data-lang')); }; });
   document.addEventListener('touchstart', touch, true);
   document.addEventListener('mousedown', touch, true);
-  setInterval(function () { clock(); checkLunch(false); }, 20000);
+  var lastMinute = null;   // redraw clock, plan and lunch countdown the moment the minute changes
+  setInterval(function () { var m = nowMins(); if (m !== lastMinute) { lastMinute = m; clock(); checkLunch(false); } }, 1000);
 
   function fit() {
     var kiosk = document.body.classList.contains('kiosk'), holder = $('stage-holder');
@@ -1414,6 +1437,8 @@ body.kiosk #stage-holder { margin: 0; border-radius: 0; box-shadow: none; }
     $('det-scan2-' + k).onchange = function () { demo.scan2[k] = this.checked; };
   });
   $('demo-forget').onclick = function () { pending = {}; saveMemory(); };
+  $('demo-time').onchange = function () { if (this.value) { simMins = mins(this.value); lastMinute = null; clock(); } };
+  $('demo-realtime').onclick = function () { simMins = null; $('demo-time').value = ''; lastMinute = null; clock(); };
   renderMemory();
 
   /* ================= boot ================= */
