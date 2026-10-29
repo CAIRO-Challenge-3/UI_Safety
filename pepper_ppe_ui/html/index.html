@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Pepper PPE Check</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Nunito:wght@400;700;800&display=swap">
+<style>
+/* Layout: one fixed 1280x800 stage (Pepper's tablet), scaled to fit. In a normal browser
+   the demo controls sit beside it; on the robot they are hidden.
+   Screens: start (button only) → position (live view, recognise, 3-2-1 photo) → result
+   (all good / missing / still missing + helper). Each result resets itself for the next person.
+   Mood: Pepper's own personality, light and playful, never alarming. No red anywhere.
+   Palette (one light look):
+     sky ground #EEF5FF · card #FFFFFF · ink #23305A · soft ink #6B7799 · line #DCE5F3
+     coral (main action) #FF7A59 · Pepper-eye blue #4C8DFF · mint (done) #2BC48A
+     sunny (to-do) #FFB938 · lavender (helper) #8E7CFF
+   Type: Baloo 2 for headlines (round, cheerful), Nunito for reading.
+   Pepper's tablet WebView is an old Chromium, so: no CSS variables, no grid, no flex gap, ES5 JS. */
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: #DDE8F7; color: #23305A;
+  font-family: Nunito, Roboto, 'Segoe UI', Arial, sans-serif;
+  -webkit-user-select: none; user-select: none;
+}
+.display { font-family: 'Baloo 2', Nunito, 'Arial Rounded MT Bold', sans-serif; }
+
+/* ---------- demo shell (browser only) ---------- */
+.demo-wrap {
+  display: flex; align-items: flex-start;
+  padding-top: 24px; padding-bottom: 24px;
+  padding-left: 16px; padding-right: 16px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+#stage-holder {
+  flex: 1; min-width: 0; position: relative; overflow: hidden;
+  border-radius: 26px; margin: 12px; box-shadow: 0 0 0 12px #FFFFFF, 0 24px 60px rgba(35,48,90,.18);
+}
+#stage {
+  position: absolute; top: 0; left: 0; width: 1280px; height: 800px; overflow: hidden;
+  transform-origin: 0 0;
+  background: #EEF5FF;
+  background-image: radial-gradient(circle at 8% 12%, #FFE9DF 0, rgba(255,233,223,0) 300px),
+                    radial-gradient(circle at 95% 90%, #E2F7EE 0, rgba(226,247,238,0) 360px),
+                    radial-gradient(circle at 80% 8%, #ECE8FF 0, rgba(236,232,255,0) 260px);
+}
+.panel {
+  width: 300px; flex-shrink: 0; margin-left: 24px; padding: 20px;
+  background: #FFFFFF; border-radius: 20px; font-size: 14px; color: #3B4770;
+  box-shadow: 0 10px 30px rgba(35,48,90,.08);
+}
+.panel h2 { margin: 0; font-family: 'Baloo 2', Nunito, sans-serif; font-size: 24px; color: #23305A; }
+.panel h3 { margin: 18px 0 8px; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: #6B7799; }
+.panel .note { margin: 4px 0 0; line-height: 1.45; color: #6B7799; }
+.pbtn {
+  display: block; width: 100%; text-align: left; margin-bottom: 6px; padding: 10px 12px;
+  background: #F4F8FF; color: #23305A; border: 2px solid #F4F8FF; border-radius: 14px;
+  font: 700 14px Nunito, sans-serif; cursor: pointer;
+}
+.pbtn:hover { border-color: #DCE5F3; }
+.pbtn.on { border-color: #FF7A59; background: #FFF3EF; }
+.pbtn small { display: block; color: #6B7799; margin-top: 2px; font-weight: 400; line-height: 1.35; }
+.pbtn.small { display: inline-block; width: auto; padding: 6px 12px; margin: 8px 0 0; }
+.panel select {
+  width: 100%; padding: 9px 10px; background: #F4F8FF; color: #23305A;
+  border: 2px solid #DCE5F3; border-radius: 12px; font: inherit;
+}
+.det { width: 100%; border-collapse: collapse; }
+.det th { font-size: 12px; font-weight: 800; color: #6B7799; text-align: center; padding: 4px; }
+.det th:first-child, .det td:first-child { text-align: left; }
+.det td { padding: 5px 4px; border-top: 1px solid #E8EEF8; text-align: center; }
+.det input { width: 18px; height: 18px; accent-color: #2BC48A; }
+.memory { margin: 0; padding: 10px 12px; background: #F4F8FF; border-radius: 12px; line-height: 1.5; }
+.voice { display: flex; align-items: center; margin-top: 16px; }
+.voice input { margin: 0 8px 0 0; width: 18px; height: 18px; accent-color: #FF7A59; }
+.panel button:focus-visible, .panel select:focus-visible, .panel input:focus-visible { outline: 3px solid #4C8DFF; outline-offset: 2px; }
+@media (max-width: 900px) {
+  .demo-wrap { flex-direction: column; align-items: stretch; }
+  .panel { width: auto; margin: 20px 0 0; }
+  #stage-holder { border-radius: 14px; box-shadow: 0 0 0 6px #FFFFFF; margin: 6px; }
+}
+
+/* robot / kiosk mode: stage fills the tablet, no demo shell */
+body.kiosk { background: #EEF5FF; overflow: hidden; }
+body.kiosk .demo-wrap { padding: 0; }
+body.kiosk .panel { display: none; }
+body.kiosk #stage-holder { margin: 0; border-radius: 0; box-shadow: none; }
+
+/* ---------- language switch (only fixed chrome) ---------- */
+.lang { position: absolute; top: 24px; right: 28px; z-index: 5; display: flex; padding: 4px; border-radius: 999px; background: #FFFFFF; box-shadow: 0 4px 12px rgba(35,48,90,.08); }
+.lang button { min-width: 64px; height: 48px; border: 0; border-radius: 999px; background: transparent; color: #6B7799; font: 800 20px Nunito, sans-serif; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.lang button.on { background: #4C8DFF; color: #FFFFFF; }
+.lang button:focus-visible { outline: 3px solid #FF7A59; outline-offset: 2px; }
+
+.screen { position: absolute; top: 0; left: 0; right: 0; bottom: 0; padding: 40px 60px; display: none; }
+.screen.on { display: block; animation: enter .45s cubic-bezier(.2,1.4,.4,1); }
+@keyframes enter { from { opacity: 0; transform: translateY(24px) scale(.98); } to { opacity: 1; transform: none; } }
+.fill { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center; }
+.row { display: flex; align-items: center; height: 100%; }
+.col { flex: 1; min-width: 0; }
+
+.h1 { margin: 0; font-weight: 800; font-size: 84px; line-height: 1; }
+.h2 { margin: 0; font-weight: 800; font-size: 56px; line-height: 1.05; }
+.pass-sub { margin: 16px 0 0; font-size: 40px; font-weight: 800; color: #FF7A59; }
+.coral { color: #FF7A59; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 88px; padding: 0 44px;
+  border: 0; border-radius: 999px; cursor: pointer; vertical-align: middle;
+  font: 800 30px Nunito, Roboto, sans-serif; color: #FFFFFF; background: #FF7A59;
+  box-shadow: 0 7px 0 #E25A3A; position: relative; top: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn:active { top: 5px; box-shadow: 0 2px 0 #E25A3A; }
+.btn:focus-visible { outline: 4px solid #4C8DFF; outline-offset: 6px; }
+.btn-soft { background: #FFFFFF; color: #23305A; box-shadow: 0 7px 0 #D3DEEF; }
+.btn-soft:active { box-shadow: 0 2px 0 #D3DEEF; }
+.btn-lav { background: #8E7CFF; box-shadow: 0 7px 0 #6C59E6; }
+.btn-lav:active { box-shadow: 0 2px 0 #6C59E6; }
+.btn + .btn { margin-left: 20px; }
+.btn-start { min-height: 170px; padding: 0 90px; font-size: 54px; box-shadow: 0 10px 0 #E25A3A, 0 24px 50px rgba(255,122,89,.35); animation: breathe 2.8s ease-in-out infinite; }
+.btn-start:active { top: 7px; box-shadow: 0 3px 0 #E25A3A; }
+.btn-start svg { width: 64px; height: 64px; margin-right: 22px; }
+@keyframes breathe { 50% { transform: scale(1.04); } }
+.btn-next { min-width: 420px; font-variant-numeric: tabular-nums; }
+.btn-next b { display: inline-block; margin-left: 14px; padding: 2px 14px; border-radius: 999px; background: rgba(255,255,255,.25); font-size: 26px; }
+.btn-soft.btn-next b { background: #EEF5FF; }
+
+/* gear pictograms: white drawing on a friendly coloured disc */
+.sign { display: inline-block; position: relative; flex-shrink: 0; width: 72px; height: 72px; border-radius: 50%; vertical-align: middle; }
+.sign svg { display: block; width: 100%; height: 100%; }
+.sign.s-xl { width: 150px; height: 150px; }
+
+/* ---------- position: live view ---------- */
+.live { position: relative; width: 760px; height: 570px; flex-shrink: 0; border-radius: 36px; overflow: hidden; background: #FFFFFF; box-shadow: 0 14px 40px rgba(35,48,90,.12); }
+.live video, .live img, .live canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); background: #FFFFFF; }
+.live .fallback { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+.live .figure { position: absolute; left: 50%; top: 40px; width: 190px; margin-left: -95px; transition: transform .7s cubic-bezier(.2,1.3,.4,1); transform-origin: 50% 100%; }
+.live .frame { position: absolute; left: 230px; right: 230px; top: 24px; bottom: 60px; border: 5px dashed rgba(255,255,255,.95); border-radius: 30px; box-shadow: 0 0 0 2px rgba(76,141,255,.35), inset 0 0 0 2px rgba(76,141,255,.35); }
+.live .feet { position: absolute; left: 50%; bottom: 16px; width: 130px; margin-left: -65px; }
+.live .feet ellipse { animation: bob 1.4s ease-in-out infinite alternate; }
+@keyframes bob { to { opacity: .55; } }
+.live .tag { position: absolute; left: 20px; top: 20px; padding: 8px 20px; border-radius: 999px; background: #2BC48A; color: #FFFFFF; font-size: 24px; font-weight: 800; box-shadow: 0 6px 16px rgba(35,48,90,.15); animation: pop .4s cubic-bezier(.2,1.6,.4,1); }
+.live .rec { position: absolute; right: 20px; top: 20px; padding: 6px 14px; border-radius: 999px; background: rgba(255,255,255,.9); color: #4C8DFF; font-size: 16px; font-weight: 800; }
+.live .rec i { display: inline-block; width: 10px; height: 10px; margin-right: 7px; border-radius: 50%; background: #4C8DFF; animation: bob .8s infinite alternate; }
+.live .count { position: absolute; top: 50%; left: 50%; width: 220px; height: 220px; margin: -110px 0 0 -110px; border-radius: 50%; background: rgba(255,122,89,.9); color: #FFFFFF; font-size: 150px; line-height: 220px; text-align: center; font-weight: 800; animation: pop .35s cubic-bezier(.2,1.6,.4,1); }
+.live .flash { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: #FFFFFF; animation: flash .5s ease-out forwards; }
+@keyframes flash { from { opacity: 1; } to { opacity: 0; } }
+.live .busy { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(238,245,255,.75); display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 34px; font-weight: 800; }
+.live .busy i { width: 90px; height: 90px; margin-bottom: 18px; border-radius: 50%; border: 9px solid #DCE5F3; border-top-color: #4C8DFF; animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pop { from { transform: scale(.6); } to { transform: scale(1); } }
+.body-svg { display: block; width: 100%; height: auto; }
+.pos-text { padding-left: 50px; }
+.hint { display: inline-flex; align-items: center; margin-top: 28px; padding: 18px 28px; border-radius: 30px; background: #FFFFFF; font-size: 30px; font-weight: 800; line-height: 1.2; box-shadow: 0 6px 18px rgba(35,48,90,.08); }
+.hint.ok { background: #2BC48A; color: #FFFFFF; }
+.hint.move { background: #FFF1D6; color: #B07400; }
+
+/* ---------- results ---------- */
+.hero-face { width: 260px; height: 260px; margin-bottom: 26px; animation: float 3.6s ease-in-out infinite; }
+@keyframes float { 50% { transform: translateY(-12px); } }
+.confetti { position: absolute; top: 0; left: 0; right: 0; bottom: 0; overflow: hidden; pointer-events: none; }
+.confetti i { position: absolute; top: -30px; width: 14px; height: 22px; border-radius: 4px; animation: fall 3s ease-in forwards; }
+@keyframes fall { to { transform: translateY(860px) rotate(540deg); opacity: 0; } }
+
+.cards { display: flex; justify-content: center; margin: 40px 0 50px; }
+.card { width: 240px; margin: 0 12px; padding: 26px 16px 22px; text-align: center; background: #FFFFFF; border-radius: 34px; box-shadow: 0 10px 28px rgba(35,48,90,.08); animation: hop .6s cubic-bezier(.2,1.6,.4,1) both; }
+.card:nth-child(2) { animation-delay: .1s; } .card:nth-child(3) { animation-delay: .2s; } .card:nth-child(4) { animation-delay: .3s; } .card:nth-child(5) { animation-delay: .4s; }
+@keyframes hop { from { transform: translateY(30px) scale(.9); } to { transform: none; } }
+.card b { display: block; margin-top: 16px; font-size: 30px; font-weight: 800; }
+.cards.compact .card { width: 200px; margin-bottom: 16px; padding: 20px 12px 16px; }
+.cards.compact .sign.s-xl { width: 110px; height: 110px; }
+.cards.compact .card b { font-size: 25px; }
+
+.still-left { text-align: center; }
+.still-left .cards { margin: 30px 0 0; flex-wrap: wrap; }
+.helpbox { width: 440px; flex-shrink: 0; margin-left: 30px; padding: 30px; text-align: center; background: #FFFFFF; border-radius: 36px; box-shadow: 0 14px 40px rgba(35,48,90,.10); }
+.helpbox h3 { margin: 0; font-family: 'Baloo 2', Nunito, sans-serif; font-size: 36px; line-height: 1.1; }
+.helpbox .where { display: inline-flex; align-items: center; margin-top: 10px; padding: 8px 18px 8px 10px; border-radius: 999px; background: #FFF1D6; color: #8A5B00; font-size: 21px; font-weight: 800; }
+.helpbox .where svg { width: 30px; height: 30px; margin-right: 8px; }
+.helpbox p { margin: 14px 0 18px; font-size: 23px; font-weight: 700; line-height: 1.35; color: #4A5680; }
+.helpbox .btn { width: 100%; min-width: 0; }
+.ring { width: 130px; height: 130px; margin: 22px auto 0; position: relative; }
+.ring svg { width: 130px; height: 130px; transform: rotate(-90deg); }
+.ring b { position: absolute; top: 0; left: 0; right: 0; line-height: 130px; font-size: 52px; color: #7A66F0; }
+.ring-bg { fill: none; stroke: #ECE8FF; stroke-width: 10; }
+.ring-fg { fill: none; stroke: #8E7CFF; stroke-width: 10; stroke-linecap: round; transition: stroke-dashoffset 1s linear; }
+.caller { position: relative; width: 130px; height: 130px; margin: 22px auto 0; }
+.caller .avatar { position: absolute; top: 0; left: 0; right: 0; bottom: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #8E7CFF; color: #FFFFFF; font: 800 50px 'Baloo 2', Nunito, sans-serif; }
+.caller .wave { position: absolute; top: 0; left: 0; right: 0; bottom: 0; border-radius: 50%; border: 5px solid #8E7CFF; animation: ripple 1.6s ease-out infinite; }
+.caller .wave + .wave { animation-delay: .8s; }
+.caller.arrived .wave { display: none; }
+.caller.arrived .avatar { background: #2BC48A; }
+@keyframes ripple { from { transform: scale(1); opacity: .8; } to { transform: scale(1.7); opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *:before, *:after { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<div class="demo-wrap">
+  <div id="stage-holder">
+    <div id="stage">
+      <div class="lang" id="lang" role="group" aria-label="Sprache / Language">
+        <button type="button" data-lang="de">DE</button><button type="button" data-lang="en">EN</button>
+      </div>
+
+      <!-- 0 · Start: only the button -->
+      <section class="screen on" id="s-idle">
+        <div class="fill">
+          <button class="btn btn-start" id="btn-start" type="button"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M18 22V9a4 4 0 0 1 8 0v11l9 2.3c2.6.7 4.2 3.3 3.7 6L37 38a6 6 0 0 1-6 5H24a6 6 0 0 1-4.6-2.2L11 30.5a3.4 3.4 0 0 1 5-4.6z" fill="#FFFFFF"/></svg><span data-t="startBtn"></span></button>
+        </div>
+      </section>
+
+      <!-- 1 · Position: live view, recognise the person, 3-2-1 photo, check -->
+      <section class="screen" id="s-position">
+        <div class="row">
+          <div class="live" id="live">
+            <div class="fallback" id="live-fallback"><div class="figure" id="pos-figure"></div></div>
+            <img id="live-img" alt="" hidden>
+            <video id="live-video" autoplay muted playsinline hidden></video>
+            <canvas id="live-still" width="640" height="480" hidden></canvas>
+            <div class="frame"></div>
+            <svg class="feet" viewBox="0 0 120 40" aria-hidden="true"><ellipse cx="38" cy="20" rx="20" ry="13" fill="#FFB938"/><ellipse cx="82" cy="20" rx="20" ry="13" fill="#FFB938"/></svg>
+            <div class="rec"><i></i>Live</div>
+            <div class="tag" id="live-name" hidden></div>
+            <div class="count display" id="live-count" hidden></div>
+            <div class="flash" id="live-flash" hidden></div>
+            <div class="busy" id="live-busy" hidden><i></i><span data-t="checking"></span></div>
+          </div>
+          <div class="col pos-text">
+            <h2 class="h2 display" data-th="posTitle"></h2>
+            <div class="hint" id="pos-hint"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2a · All good -->
+      <section class="screen" id="s-pass">
+        <div class="confetti" id="confetti"></div>
+        <div class="fill">
+          <div class="hero-face face-slot" data-mood="happy"></div>
+          <h1 class="h1 display" data-t="passTitle"></h1>
+          <p class="pass-sub" id="pass-sub"></p>
+          <div style="margin-top:40px"><button class="btn btn-next" id="btn-next-pass" type="button"></button></div>
+        </div>
+      </section>
+
+      <!-- 2b · First visit: what is missing, nothing else -->
+      <section class="screen" id="s-missing">
+        <div class="fill">
+          <h2 class="h2 display" id="miss-title"></h2>
+          <div class="cards" id="miss-cards"></div>
+          <button class="btn btn-soft btn-next" id="btn-next-miss" type="button"></button>
+        </div>
+      </section>
+
+      <!-- 2c · Return visit, still missing: wait at the spot, helper is called -->
+      <section class="screen" id="s-still">
+        <div class="row">
+          <div class="col still-left">
+            <h2 class="h2 display" id="still-title"></h2>
+            <div class="cards compact" id="still-cards"></div>
+          </div>
+          <div class="helpbox">
+            <h3 data-t="waitTitle"></h3>
+            <div class="where"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15m-6-7l7 7-7 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><span data-t="waitWhere"></span></div>
+            <div class="ring" id="still-ring-wrap">
+              <svg viewBox="0 0 120 120" aria-hidden="true"><circle class="ring-bg" cx="60" cy="60" r="52"/><circle class="ring-fg" id="still-ring" cx="60" cy="60" r="52" stroke-dasharray="326.7" stroke-dashoffset="0"/></svg>
+              <b class="display" id="still-sec">10</b>
+            </div>
+            <div class="caller" id="caller" hidden><div class="wave"></div><div class="wave"></div><div class="avatar" id="caller-initials">MW</div></div>
+            <p id="still-status"></p>
+            <button class="btn btn-lav" id="btn-call-now" type="button" data-t="callNow"></button>
+            <button class="btn btn-next" id="btn-next-still" type="button" hidden></button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Backend unreachable -->
+      <section class="screen" id="s-error">
+        <div class="fill">
+          <div class="face-slot" data-mood="think" style="width:150px;height:150px;margin-bottom:18px"></div>
+          <h2 class="h2 display" data-t="errTitle"></h2>
+          <div style="margin-top:36px">
+            <button class="btn" id="btn-err-retry" type="button" data-t="errRetry"></button>
+            <button class="btn btn-soft" id="btn-err-home" type="button" data-t="errHome"></button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <aside class="panel" id="panel">
+    <h2>Demo controls</h2>
+    <p class="note">Stands in for the YOLO detector and face recognition so you can walk through every case. Hidden on the robot. Opened as a local file, the live view uses your webcam.</p>
+    <h3>Scenario</h3>
+    <div id="presets"></div>
+    <h3>Who is in front of Pepper</h3>
+    <select id="demo-person">
+      <option value="francesca">Francesca (known face)</option>
+      <option value="jonas">Jonas (known face)</option>
+      <option value="visitor">Visitor (unknown face)</option>
+    </select>
+    <h3>What YOLO detects</h3>
+    <table class="det">
+      <thead><tr><th>Item</th><th>1st visit</th><th>Return</th></tr></thead>
+      <tbody id="det-body"></tbody>
+    </table>
+    <h3>Pepper remembers</h3>
+    <p class="memory" id="demo-memory">Nobody yet.</p>
+    <button type="button" class="pbtn small" id="demo-forget">Forget everyone</button>
+    <h3>Jump to a screen</h3>
+    <select id="demo-jump">
+      <option value="">Choose a screen…</option>
+      <option value="idle">Start</option>
+      <option value="position">Positioning + photo</option>
+      <option value="pass">All good</option>
+      <option value="missing">Missing (1st visit)</option>
+      <option value="still">Still missing (return visit)</option>
+      <option value="error">Backend error</option>
+    </select>
+    <label class="voice"><input type="checkbox" id="demo-voice" checked>Speak aloud (browser voice)</label>
+  </aside>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ================= configuration ================= */
+  var CONFIG = {
+    backendUrl: 'http://192.168.1.50:5000',   // YOLO + face-recognition server, reachable from the tablet
+    required: ['helmet', 'goggles', 'vest', 'gloves', 'boots'],
+    defaultLang: 'de',           // language at power-on; after that it stays on whatever was last picked
+    nextAfterPass: 10,           // seconds until the screen is ready for the next person
+    nextAfterMissing: 15,
+    callDelay: 10,               // return visit still missing: helper is called after this
+    nextAfterCall: 20,
+    idleResetSeconds: 60,
+    rememberMinutes: 60,         // how long Pepper remembers what someone was missing
+    assistant: { name: 'Maria Weber', first: 'Maria', ext: '2140' },
+    voice: {                     // Pepper's built-in text-to-speech (ALAnimatedSpeech)
+      pitch: 115,                // \vct=..\ higher sounds cheerier
+      speed: 100                 // \rspd=..\
+    }
+  };
+
+  /* ================= texts (German first) ================= */
+  var T = {
+    de: {
+      startBtn: 'Tippen zum Start',
+      posTitle: 'Stell dich auf die<br><span class="coral">gelben Fußspuren</span>',
+      checking: 'Moment…',
+      h_none: 'Ich suche dich…', h_step_back: 'Bitte einen kleinen Schritt zurück', h_come_closer: 'Komm ein bisschen näher',
+      h_move_left: '← Ein bisschen nach links', h_move_right: 'Ein bisschen nach rechts →', h_ok: 'Perfekt! Bitte stillhalten',
+      hiName: 'Hallo {name}!', backName: 'Willkommen zurück, {name}!',
+      sayPos: 'Hallo! Stell dich bitte auf die gelben Fußspuren, damit ich dich ganz sehe.',
+      sayHi: 'Hallo {name}!', sayBack: 'Willkommen zurück{cn}!', sayFreeze: 'Perfekt! Bitte lächeln und stillhalten.',
+      passTitle: 'Sicherheitscheck bestanden!', passSub: 'Einen schönen Tag{cn}!',
+      sayPass: 'Rock on{cn}! Sicherheitscheck bestanden. Einen schönen Tag!',
+      missTitle: 'Es fehlt:', missTitleName: '{name}, es fehlt:',
+      sayMiss: 'Du brauchst noch {list}. Komm danach einfach wieder zu mir!',
+      sayMissName: '{name}, du brauchst noch {list}. Komm danach einfach wieder zu mir!',
+      stillTitle: 'Es fehlt immer noch:', stillTitleName: '{name}, es fehlt immer noch:',
+      waitTitle: 'Bitte warte am Wartepunkt', waitWhere: 'Gelbe Markierung rechts neben mir',
+      callIn: 'Ich rufe {helper} in {s} Sekunden.', callNow: 'Jetzt rufen',
+      calling: 'Ich rufe {helper}…', called: '{helper} ist informiert und kommt gleich zu dir.',
+      callFail: 'Ich habe {helper} nicht erreicht. Bitte ruf Durchwahl {ext} an.',
+      sayStill: 'Hmm, ich sehe {list} immer noch nicht. Bitte warte am Wartepunkt rechts neben mir. Ich rufe gleich {helper}.',
+      sayCalled: '{helper} ist informiert und kommt gleich zu dir.',
+      sayCallFail: 'Ich habe {helper} nicht erreicht. Bitte ruf Durchwahl {ext} an.',
+      nextBtn: 'Nächste Person',
+      errTitle: 'Hoppla, meine Kamera braucht kurz', errRetry: 'Nochmal versuchen', errHome: 'Zum Start',
+      sayErr: 'Hoppla, meine Kamera braucht einen Moment. Versuchen wir es nochmal.',
+      and: 'und'
+    },
+    en: {
+      startBtn: 'Tap to start',
+      posTitle: 'Stand on the<br><span class="coral">yellow footprints</span>',
+      checking: 'One moment…',
+      h_none: 'Looking for you…', h_step_back: 'A tiny step back, please', h_come_closer: 'Come a little closer',
+      h_move_left: '← A little to your left', h_move_right: 'A little to your right →', h_ok: 'Perfect! Hold still',
+      hiName: 'Hi {name}!', backName: 'Welcome back, {name}!',
+      sayPos: 'Hello! Please stand on the yellow footprints, so I can see all of you.',
+      sayHi: 'Hi {name}!', sayBack: 'Welcome back{cn}!', sayFreeze: 'Perfect! Smile and hold still.',
+      passTitle: 'Safety check passed!', passSub: 'Have a great day{cn}!',
+      sayPass: 'Rock on{cn}! Safety check passed. Have a great day!',
+      missTitle: 'Missing:', missTitleName: '{name}, you\'re missing:',
+      sayMiss: 'You still need {list}. Then just come back to me!',
+      sayMissName: '{name}, you still need {list}. Then just come back to me!',
+      stillTitle: 'Still missing:', stillTitleName: '{name}, still missing:',
+      waitTitle: 'Please wait at the waiting spot', waitWhere: 'Yellow mark to my right',
+      callIn: 'Calling {helper} in {s} seconds.', callNow: 'Call now',
+      calling: 'Calling {helper}…', called: '{helper} knows and is on the way to you.',
+      callFail: 'I couldn\'t reach {helper}. Please call ext. {ext}.',
+      sayStill: 'Hmm, I still can\'t see {list}. Please wait at the waiting spot to my right. I\'ll call {helper} in a moment.',
+      sayCalled: '{helper} knows and is on the way to you.',
+      sayCallFail: 'I couldn\'t reach {helper}. Please call extension {ext}.',
+      nextBtn: 'Next person',
+      errTitle: 'Oops, my camera needs a moment', errRetry: 'Try again', errHome: 'Back to start',
+      sayErr: 'Oops, my camera needs a moment. Let\'s try again.',
+      and: 'and'
+    }
+  };
+
+  var PPE = {
+    helmet:  { color: '#FFB938', de: { label: 'Helm',              acc: 'deinen Helm' },              en: { label: 'Helmet',         acc: 'your helmet' } },
+    goggles: { color: '#8E7CFF', de: { label: 'Schutzbrille',      acc: 'deine Schutzbrille' },       en: { label: 'Safety glasses', acc: 'your safety glasses' } },
+    vest:    { color: '#FF7A59', de: { label: 'Warnweste',         acc: 'deine Warnweste' },          en: { label: 'Hi-vis vest',    acc: 'your hi-vis vest' } },
+    gloves:  { color: '#22B8B0', de: { label: 'Handschuhe',        acc: 'deine Handschuhe' },         en: { label: 'Gloves',         acc: 'your gloves' } },
+    boots:   { color: '#4C8DFF', de: { label: 'Sicherheitsschuhe', acc: 'deine Sicherheitsschuhe' },  en: { label: 'Safety boots',   acc: 'your safety boots' } }
+  };
+
+  /* demo-only people; on the robot the backend returns these. Visitors get a temporary face id and no name. */
+  var PEOPLE = {
+    francesca: { id: 'francesca', name: 'Francesca' },
+    jonas:     { id: 'jonas', name: 'Jonas' },
+    visitor:   { id: 'visitor-7f3', name: null }
+  };
+
+  /* ================= small helpers ================= */
+  var LANG = CONFIG.defaultLang;
+  function $(id) { return document.getElementById(id); }
+  function each(a, fn) { for (var i = 0; i < a.length; i++) fn(a[i], i); }
+  function filter(a, fn) { var r = []; each(a, function (x) { if (fn(x)) r.push(x); }); return r; }
+  function wait(ms) { return new Promise(function (res) { setTimeout(res, ms); }); }
+  function initials(full) { return full.split(' ').map(function (w) { return w.charAt(0); }).join('').slice(0, 2); }
+  function t(key, v) {
+    var s = T[LANG][key]; if (s == null) s = T.en[key];
+    return s.replace(/\{(\w+)\}/g, function (m, k) { return v && v[k] != null ? v[k] : ''; });
+  }
+  function P(k) { return PPE[k][LANG]; }
+  function list(keys) {
+    var w = keys.map(function (k) { return P(k).acc; });
+    return w.length < 2 ? w.join('') : w.slice(0, -1).join(', ') + ' ' + t('and') + ' ' + w[w.length - 1];
+  }
+  function nameOf() { return state.person && state.person.name; }
+  function cn() { return nameOf() ? ', ' + nameOf() : ''; }
+  /* "{name}, …" variant when we know the name, plain variant otherwise */
+  function tn(key, v) { v = v || {}; v.name = nameOf(); return v.name ? t(key + 'Name', v) : t(key, v); }
+
+  /* Pepper's face: white head, LED-ring eyes. Moods: happy, think */
+  function pepperFace(mood) {
+    var eyes = mood === 'happy'
+      ? '<path d="M27 60Q40 44 53 60" fill="none" stroke="#4C8DFF" stroke-width="8" stroke-linecap="round"/><path d="M67 60Q80 44 93 60" fill="none" stroke="#4C8DFF" stroke-width="8" stroke-linecap="round"/>'
+      : '<circle cx="40" cy="56" r="13" fill="#23305A"/><circle cx="40" cy="56" r="13" fill="none" stroke="#4C8DFF" stroke-width="5"/><circle cx="44" cy="51" r="4" fill="#FFFFFF"/>' +
+        '<circle cx="80" cy="56" r="13" fill="#23305A"/><circle cx="80" cy="56" r="13" fill="none" stroke="#4C8DFF" stroke-width="5"/><circle cx="84" cy="51" r="4" fill="#FFFFFF"/>';
+    var mouth = mood === 'happy' ? '<path d="M46 80Q60 96 74 80Z" fill="#23305A"/>'
+      : '<path d="M50 86Q58 82 70 86" fill="none" stroke="#23305A" stroke-width="4" stroke-linecap="round"/>';
+    return '<svg viewBox="0 0 120 120" aria-hidden="true" style="width:100%;height:100%;display:block">' +
+      '<rect x="2" y="44" width="10" height="30" rx="5" fill="#DCE5F3"/><rect x="108" y="44" width="10" height="30" rx="5" fill="#DCE5F3"/>' +
+      '<circle cx="60" cy="60" r="52" fill="#FFFFFF" stroke="#DCE5F3" stroke-width="4"/>' +
+      '<circle cx="26" cy="76" r="7" fill="#FFB4A3" opacity=".6"/><circle cx="94" cy="76" r="7" fill="#FFB4A3" opacity=".6"/>' +
+      eyes + mouth + '</svg>';
+  }
+
+  /* white pictograms, cut-outs use currentColor (= the disc colour) */
+  var ICON = {
+    helmet: '<path d="M12 40C12 25 21 15 32 15C43 15 52 25 52 40Z" fill="#fff"/><rect x="8" y="40" width="48" height="7" rx="3.5" fill="#fff"/><rect x="30" y="15" width="4" height="25" fill="currentColor"/>',
+    goggles: '<rect x="5" y="29" width="54" height="6" rx="3" fill="#fff"/><rect x="10" y="22" width="44" height="21" rx="9" fill="#fff"/><rect x="14" y="26" width="15" height="12" rx="5" fill="currentColor"/><rect x="35" y="26" width="15" height="12" rx="5" fill="currentColor"/><path d="M28 43h8l-4-6z" fill="currentColor"/>',
+    vest: '<path d="M21 11h7l4 11 4-11h7l8 8v35H13V19z" fill="#fff"/><rect x="13" y="33" width="38" height="4" fill="currentColor"/><rect x="13" y="43" width="38" height="4" fill="currentColor"/><rect x="31" y="22" width="2" height="32" fill="currentColor"/>',
+    gloves: '<rect x="19" y="15" width="6" height="22" rx="3" fill="#fff"/><rect x="26" y="10" width="6" height="26" rx="3" fill="#fff"/><rect x="33" y="12" width="6" height="24" rx="3" fill="#fff"/><rect x="40" y="17" width="6" height="20" rx="3" fill="#fff"/><rect x="19" y="30" width="27" height="20" rx="6" fill="#fff"/><rect x="6" y="33" width="18" height="7" rx="3.5" transform="rotate(35 22 36)" fill="#fff"/><rect x="21" y="51" width="23" height="7" rx="1.5" fill="#fff"/>',
+    boots: '<path d="M17 9h17v29l15 6c4 1.6 7 4.5 7 8.5V54H13v-8l4-6z" fill="#fff"/><rect x="11" y="54" width="47" height="5" rx="2" fill="#fff"/><rect x="17" y="16" width="17" height="2.5" fill="currentColor"/>'
+  };
+  function sign(key, size) {
+    var c = PPE[key].color;
+    return '<span class="sign ' + (size || '') + '" style="background:' + c + ';color:' + c + '"><svg viewBox="0 0 64 64" aria-hidden="true">' + ICON[key] + '</svg></span>';
+  }
+  function cardsHTML(keys) {
+    return keys.map(function (k) { return '<div class="card">' + sign(k, 's-xl') + '<b>' + P(k).label + '</b></div>'; }).join('');
+  }
+
+  /* stand-in figure when there is no camera picture */
+  function bodySVG() {
+    return '<svg class="body-svg" viewBox="0 0 200 440" aria-hidden="true"><g fill="#C7D5EE">' +
+      '<circle cx="100" cy="55" r="28"/><rect x="90" y="80" width="20" height="16"/>' +
+      '<path d="M60 96Q100 84 140 96L148 222H52Z"/>' +
+      '<path d="M58 98L34 110L24 240L44 244L56 140Z"/><path d="M142 98L166 110L176 240L156 244L144 140Z"/>' +
+      '<circle cx="34" cy="252" r="12"/><circle cx="166" cy="252" r="12"/>' +
+      '<path d="M54 218H98L96 412H66Z"/><path d="M102 218H146L134 412H104Z"/>' +
+      '<ellipse cx="78" cy="420" rx="20" ry="9"/><ellipse cx="122" cy="420" rx="20" ry="9"/></g>' +
+      '<circle cx="90" cy="52" r="3.5" fill="#23305A"/><circle cx="110" cy="52" r="3.5" fill="#23305A"/><path d="M91 65Q100 72 109 65" fill="none" stroke="#23305A" stroke-width="3" stroke-linecap="round"/></svg>';
+  }
+
+  /* ================= memory: who was missing what ================= */
+  var MEM_KEY = 'pepper-ppe-pending';
+  var pending = {};
+  try { pending = JSON.parse(localStorage.getItem(MEM_KEY)) || {}; } catch (e) { pending = {}; }
+  function saveMemory() { try { localStorage.setItem(MEM_KEY, JSON.stringify(pending)); } catch (e) {} renderMemory(); }
+  function recall(id) {
+    var r = id && pending[id];
+    if (r && Date.now() - r.at > CONFIG.rememberMinutes * 60000) { delete pending[id]; saveMemory(); r = null; }
+    return r || null;
+  }
+
+  /* ================= robot link (NAOqi) ================= */
+  var onRobot = false;
+  var Robot = {
+    speech: null, tts: null, memory: null,
+    raise: function (key, value) {
+      if (this.memory) this.memory.raiseEvent(key, JSON.stringify(value));
+      else if (window.console) console.log('[event]', key, value);
+    }
+  };
+  function then(p, fn, err) { if (p && p.then) p.then(fn, err); else if (p && p.done) { p.done(fn); if (err && p.fail) p.fail(err); } }
+
+  function connectRobot(done) {
+    var finished = false;
+    function finish(ok) { if (!finished) { finished = true; done(ok); } }
+    var s = document.createElement('script');
+    s.src = '/libs/qimessaging/2/qimessaging.js';
+    s.onload = function () {
+      if (!window.QiSession) return finish(false);
+      window.QiSession(function (session) {
+        then(session.service('ALAnimatedSpeech'), function (x) { Robot.speech = x; });
+        then(session.service('ALTextToSpeech'), function (x) { Robot.tts = x; setRobotLang(); });
+        then(session.service('ALMemory'), function (x) { Robot.memory = x; });
+        finish(true);
+      }, function () { finish(false); });
+    };
+    s.onerror = function () { finish(false); };
+    document.head.appendChild(s);
+    setTimeout(function () { finish(false); }, 2500);
+  }
+  function setRobotLang() { if (Robot.tts) Robot.tts.setLanguage(LANG === 'de' ? 'German' : 'English'); }
+
+  /* ================= voice: Pepper's own TTS; browser voice only in the demo ================= */
+  function say(text) {
+    var v = CONFIG.voice;
+    if (Robot.speech) {
+      Robot.speech.say('\\vct=' + v.pitch + '\\ \\rspd=' + v.speed + '\\ ' + text);
+    } else if (window.speechSynthesis && demo.voice) {
+      window.speechSynthesis.cancel();
+      var u = new SpeechSynthesisUtterance(text);
+      u.lang = LANG === 'de' ? 'de-DE' : 'en-US'; u.pitch = 1.3; u.rate = 1.05;
+      var match = filter(window.speechSynthesis.getVoices(), function (v) { return v.lang.indexOf(LANG) === 0; })[0];
+      if (match) u.voice = match;
+      window.speechSynthesis.speak(u);
+    }
+  }
+
+  /* ================= language: stays on the last choice until switched again ================= */
+  var LANG_KEY = 'pepper-ppe-lang';
+  function setLang(l) {
+    LANG = l;
+    try { localStorage.setItem(LANG_KEY, l); } catch (e) {}
+    document.documentElement.lang = l;
+    each(document.querySelectorAll('[data-t]'), function (el) { el.textContent = t(el.getAttribute('data-t')); });
+    each(document.querySelectorAll('[data-th]'), function (el) { el.innerHTML = t(el.getAttribute('data-th')); });
+    each(document.querySelectorAll('#lang button'), function (b) { b.classList.toggle('on', b.getAttribute('data-lang') === l); });
+    setRobotLang();
+    if (redraw) redraw();   // re-render the open result screen in the new language
+  }
+  var redraw = null;
+
+  /* ================= live view ================= */
+  var camStream = null;
+  function startLive() {
+    var img = $('live-img'), vid = $('live-video');
+    $('live-fallback').hidden = false; $('live-still').hidden = true; img.hidden = true; vid.hidden = true;
+    if (onRobot) {   // MJPEG stream of Pepper's head camera, served by the backend
+      img.onload = function () { img.hidden = false; $('live-fallback').hidden = true; };
+      img.onerror = function () { img.hidden = true; $('live-fallback').hidden = false; };
+      img.src = CONFIG.backendUrl + '/live.mjpg';
+      img.hidden = false;
+    } else if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {   // demo: laptop webcam if allowed
+      navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false }).then(function (s) {
+        if (current !== 'position') { s.getTracks().forEach(function (tr) { tr.stop(); }); return; }
+        camStream = s; vid.srcObject = s; vid.hidden = false; $('live-fallback').hidden = true;
+      })['catch'](function () {});
+    }
+  }
+  function freezeLive() {
+    var vid = $('live-video'), img = $('live-img'), c = $('live-still');
+    var src = !vid.hidden ? vid : (!img.hidden && img.complete ? img : null);
+    if (src) { try { c.getContext('2d').drawImage(src, 0, 0, c.width, c.height); c.hidden = false; } catch (e) {} }
+    stopLive();
+  }
+  function stopLive() {
+    if (camStream) { camStream.getTracks().forEach(function (tr) { tr.stop(); }); camStream = null; }
+    $('live-video').hidden = true;
+    var img = $('live-img'); img.onload = img.onerror = null; img.removeAttribute('src'); img.hidden = true;
+  }
+
+  /* ================= backends ================= */
+  /* Real backend: JSON over HTTP. See README for the contract. */
+  function http(method, path, body) {
+    return new Promise(function (res, rej) {
+      var x = new XMLHttpRequest();
+      x.open(method, CONFIG.backendUrl + path);
+      x.timeout = 10000;
+      x.setRequestHeader('Content-Type', 'application/json');
+      x.onload = function () {
+        if (x.status >= 200 && x.status < 300) { try { res(JSON.parse(x.responseText)); } catch (e) { rej(e); } }
+        else rej(new Error('HTTP ' + x.status));
+      };
+      x.onerror = x.ontimeout = function () { rej(new Error('Backend unreachable')); };
+      x.send(body ? JSON.stringify(body) : null);
+    });
+  }
+  var HttpBackend = {
+    frameStatus: function () { return http('GET', '/frame'); },                                  // {hint, person}
+    check:       function () { return http('POST', '/check', { required: CONFIG.required }); },  // {person, items}
+    requestHelp: function (info) { return http('POST', '/help', info); }
+  };
+
+  /* Demo backend: answers from the demo panel */
+  var demo = { person: 'francesca', voice: true, scan1: {}, scan2: {} };
+  var DemoBackend = {
+    frameStatus: function (n) {
+      var seq = ['none', 'step_back', 'step_back', 'move_left', 'move_left', 'ok'];
+      return wait(650).then(function () { return { hint: seq[Math.min(n, seq.length - 1)], person: n >= 2 ? PEOPLE[demo.person] : null }; });
+    },
+    check: function () {
+      return wait(1500).then(function () {
+        var p = PEOPLE[demo.person], src = recall(p.id) ? demo.scan2 : demo.scan1, items = {};
+        each(CONFIG.required, function (k) { items[k] = !!src[k]; });
+        return { person: p, items: items };
+      });
+    },
+    requestHelp: function () { return wait(1500).then(function () { return { eta_min: 2 }; }); }
+  };
+  var Backend = DemoBackend;
+
+  /* ================= flow control ================= */
+  var state = { person: null };
+  var run = 0, timers = [], current = 'idle', idleTimer = null;
+
+  function stopFlow() { run++; each(timers, clearTimeout); timers = []; }
+  function later(fn, ms) { var my = run; timers.push(setTimeout(function () { if (my === run) fn(); }, ms)); }
+  function guard(fn) { var my = run; return function (v) { if (my === run) return fn(v); }; }
+  function countdown(sec, onTick, onDone) {
+    (function tick(s) { onTick(s); if (s === 0) return onDone(); later(function () { tick(s - 1); }, 1000); })(sec);
+  }
+  /* the "Next person · 10" button: counts down, tap to skip */
+  function nextTimer(btnId, sec) {
+    var b = $(btnId);
+    b.hidden = false;
+    b.onclick = goIdle;
+    countdown(sec, function (s) { b.innerHTML = t('nextBtn') + '<b>' + s + '</b>'; }, goIdle);
+  }
+
+  function show(name) {
+    each(document.querySelectorAll('.screen'), function (s) { s.classList.toggle('on', s.id === 's-' + name); });
+    if (current === 'position' && name !== 'position') stopLive();
+    current = name;
+    redraw = null;
+    touch();
+  }
+  function touch() {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(function () { if (current !== 'idle') goIdle(); }, CONFIG.idleResetSeconds * 1000);
+  }
+
+  function fail(err) {
+    if (window.console) console.error(err);
+    show('error');
+    say(t('sayErr'));
+  }
+
+  function goIdle() {
+    stopFlow();
+    state = { person: null };
+    show('idle');
+  }
+
+  /* 1 · position: live view, recognise, 3-2-1, photo, check */
+  var HINTS = {
+    none:        { cls: '',     fig: 'translateX(420px)' },
+    step_back:   { cls: 'move', fig: 'scale(1.45)', speak: true },
+    come_closer: { cls: 'move', fig: 'scale(.6)', speak: true },
+    move_left:   { cls: 'move', fig: 'translateX(110px)', speak: true },
+    move_right:  { cls: 'move', fig: 'translateX(-110px)', speak: true },
+    ok:          { cls: 'ok',   fig: 'none' }
+  };
+  var lastHint = 'none';
+  function setHint(h) {
+    var d = HINTS[h] || HINTS.none;
+    lastHint = HINTS[h] ? h : 'none';
+    $('pos-hint').className = 'hint ' + d.cls;
+    $('pos-hint').textContent = t('h_' + lastHint);
+    $('pos-figure').style.transform = d.fig;
+    $('pos-figure').style.webkitTransform = d.fig;
+  }
+
+  function showName(p) {
+    var tag = $('live-name');
+    if (!p || !p.name) { tag.hidden = true; return; }
+    tag.textContent = recall(p.id) ? t('backName', { name: p.name }) : t('hiName', { name: p.name });
+    tag.hidden = false;
+  }
+
+  function start() {
+    stopFlow();
+    state = { person: null };
+    show('position');
+    redraw = function () { setHint(lastHint); showName(state.person); };
+    $('live-name').hidden = true; $('live-count').hidden = true; $('live-flash').hidden = true; $('live-busy').hidden = true;
+    setHint('none');
+    startLive();
+    say(t('sayPos'));
+    var n = 0, okCount = 0, last = null;
+    function poll() {
+      Backend.frameStatus(n++).then(guard(function (r) {
+        var p = r.person;
+        if (p && (!state.person || state.person.id !== p.id)) {
+          state.person = p; showName(p);
+          if (p.name) say(recall(p.id) ? t('sayBack', { cn: cn() }) : t('sayHi', { name: p.name }));
+        }
+        if (r.hint !== last) { setHint(r.hint); if (last !== null && HINTS[r.hint] && HINTS[r.hint].speak) say(t('h_' + r.hint).replace(/[←→]/g, '')); last = r.hint; }
+        if (r.hint === 'ok') { if (++okCount >= 2) return snap(); } else okCount = 0;
+        later(poll, 450);
+      }))['catch'](guard(fail));
+    }
+    later(poll, 2000);
+  }
+
+  function snap() {
+    say(t('sayFreeze'));
+    var c = $('live-count');
+    countdown(3, function (s) {
+      c.hidden = !s; c.textContent = s;
+      c.style.animation = 'none'; void c.offsetWidth; c.style.animation = '';   // replay the pop on every number
+    }, function () {
+      $('live-flash').hidden = false;
+      freezeLive();
+      $('live-busy').hidden = false;
+      Backend.check().then(guard(result))['catch'](guard(fail));
+    });
+  }
+
+  /* 2 · result + remember who was missing what */
+  function result(r) {
+    var p = r.person || state.person, id = p && p.id;
+    state.person = p;
+    var rec = recall(id), visit = rec ? rec.visits + 1 : 1;
+    var missing = filter(CONFIG.required, function (k) { return !r.items[k]; });
+    if (id) {
+      if (missing.length) pending[id] = { missing: missing, visits: visit, at: Date.now(), name: p.name || 'Visitor' };
+      else delete pending[id];
+      saveMemory();
+    }
+    Robot.raise('PPECheck/Result', { person: id || null, visit: visit, missing: missing });
+    if (!missing.length) passScreen();
+    else if (visit === 1) missingScreen(missing);
+    else stillScreen(missing, visit);
+  }
+
+  function confetti() {
+    var colors = ['#FF7A59', '#FFB938', '#2BC48A', '#4C8DFF', '#8E7CFF', '#22B8B0'], html = '';
+    for (var i = 0; i < 46; i++) {
+      html += '<i style="left:' + Math.round(Math.random() * 100) + '%;background:' + colors[i % colors.length] +
+        ';animation-delay:' + (Math.random() * .8).toFixed(2) + 's;animation-duration:' + (2.2 + Math.random() * 1.6).toFixed(2) + 's"></i>';
+    }
+    $('confetti').innerHTML = html;
+  }
+
+  function passScreen() {
+    show('pass');
+    confetti();
+    redraw = function () { $('pass-sub').textContent = t('passSub', { cn: cn() }); };
+    redraw();
+    say(t('sayPass', { cn: cn() }));
+    nextTimer('btn-next-pass', CONFIG.nextAfterPass);
+  }
+
+  function missingScreen(missing) {
+    show('missing');
+    redraw = function () { $('miss-title').textContent = tn('missTitle'); $('miss-cards').innerHTML = cardsHTML(missing); };
+    redraw();
+    say(tn('sayMiss', { list: list(missing) }));
+    nextTimer('btn-next-miss', CONFIG.nextAfterMissing);
+  }
+
+  /* return visit and still missing: wait at the spot, helper called after 10 s, then next person */
+  function stillScreen(missing, visit) {
+    var total = CONFIG.callDelay, C = 326.7, a = CONFIG.assistant, called = false, status = null;
+    show('still');
+    function setStatus(key, v) { status = [key, v]; $('still-status').textContent = t(key, v); }
+    redraw = function () {
+      $('still-title').textContent = tn('stillTitle');
+      $('still-cards').innerHTML = cardsHTML(missing);
+      if (status) setStatus(status[0], status[1]);
+    };
+    redraw();
+    $('still-ring-wrap').hidden = false; $('caller').hidden = true; $('caller').className = 'caller';
+    $('caller-initials').textContent = initials(a.name);
+    $('btn-call-now').hidden = false; $('btn-next-still').hidden = true;
+    say(t('sayStill', { list: list(missing), helper: a.first }));
+
+    function call() {
+      if (called) return;
+      called = true;
+      stopFlow();
+      var p = state.person;
+      $('still-ring-wrap').hidden = true; $('caller').hidden = false; $('btn-call-now').hidden = true;
+      setStatus('calling', { helper: a.first });
+      var info = { person: p ? p.id : null, name: p ? p.name : null, missing: missing, visit: visit, lang: LANG };
+      Robot.raise('PPECheck/HelpRequested', info);
+      Backend.requestHelp(info).then(guard(function () {
+        $('caller').className = 'caller arrived';
+        setStatus('called', { helper: a.first });
+        say(t('sayCalled', { helper: a.first }));
+        nextTimer('btn-next-still', CONFIG.nextAfterCall);
+      }))['catch'](guard(function () {
+        setStatus('callFail', { helper: a.first, ext: a.ext });
+        say(t('sayCallFail', { helper: a.first, ext: a.ext }));
+        nextTimer('btn-next-still', CONFIG.nextAfterCall);
+      }));
+    }
+    $('btn-call-now').onclick = call;
+    countdown(total, function (s) {
+      $('still-sec').textContent = s;
+      $('still-ring').style.strokeDashoffset = C * (1 - s / total);
+      setStatus('callIn', { helper: a.first, s: s });
+    }, call);
+  }
+
+  /* ================= wiring ================= */
+  each(document.querySelectorAll('.face-slot'), function (el) { el.innerHTML = pepperFace(el.getAttribute('data-mood')); });
+  $('pos-figure').innerHTML = bodySVG();
+  $('btn-start').onclick = start;
+  $('btn-err-retry').onclick = start;
+  $('btn-err-home').onclick = goIdle;
+  each(document.querySelectorAll('#lang button'), function (b) { b.onclick = function () { setLang(b.getAttribute('data-lang')); }; });
+  document.addEventListener('touchstart', touch, true);
+  document.addEventListener('mousedown', touch, true);
+
+  function fit() {
+    var kiosk = document.body.classList.contains('kiosk');
+    var holder = $('stage-holder');
+    var s = kiosk ? Math.min(window.innerWidth / 1280, window.innerHeight / 800) : Math.min(holder.clientWidth / 1280, 1);
+    $('stage').style.transform = 'scale(' + s + ')';
+    $('stage').style.webkitTransform = 'scale(' + s + ')';
+    holder.style.height = (800 * s) + 'px';
+  }
+  window.addEventListener('resize', fit);
+
+  /* ================= demo panel ================= */
+  var PRESETS = [
+    { id: 'all',     title: 'All gear on',                sub: 'Francesca → have a great day → next person', person: 'francesca', s1: [], s2: [] },
+    { id: 'gloves',  title: 'Gloves missing, comes back', sub: 'Francesca: gloves missing → resets. Tap Start again → all good', person: 'francesca', s1: ['gloves'], s2: [] },
+    { id: 'helmet',  title: 'Helmet still missing',       sub: 'Jonas: helmet + gloves missing. Start again → helmet still missing → wait spot, helper called', person: 'jonas', s1: ['helmet', 'gloves'], s2: ['helmet'] },
+    { id: 'visitor', title: 'Unknown visitor',            sub: 'No name, vest missing. Start again → all good', person: 'visitor', s1: ['vest'], s2: [] }
+  ];
+
+  function renderMemory() {
+    var ids = [];
+    for (var id in pending) if (pending.hasOwnProperty(id)) ids.push(id);
+    $('demo-memory').innerHTML = ids.length ? ids.map(function (id) {
+      var r = pending[id];
+      return '<b>' + r.name + '</b>: ' + r.missing.map(function (k) { return PPE[k].en.label.toLowerCase(); }).join(', ') + ' (visit ' + r.visits + ')';
+    }).join('<br>') : 'Nobody yet.';
+  }
+
+  function buildDetTable() {
+    $('det-body').innerHTML = CONFIG.required.map(function (k) {
+      return '<tr><td>' + PPE[k].en.label + '</td>' +
+        '<td><input type="checkbox" id="det-scan1-' + k + '" aria-label="' + PPE[k].en.label + ' seen on 1st visit"></td>' +
+        '<td><input type="checkbox" id="det-scan2-' + k + '" aria-label="' + PPE[k].en.label + ' seen on return visit"></td></tr>';
+    }).join('');
+    each(CONFIG.required, function (k) {
+      $('det-scan1-' + k).onchange = function () { demo.scan1[k] = this.checked; markPreset(null); };
+      $('det-scan2-' + k).onchange = function () { demo.scan2[k] = this.checked; markPreset(null); };
+    });
+  }
+  function markPreset(id) { each($('presets').children, function (b) { b.classList.toggle('on', b.getAttribute('data-id') === id); }); }
+  function applyPreset(p, restart) {
+    demo.person = p.person; $('demo-person').value = p.person;
+    each(CONFIG.required, function (k) {
+      demo.scan1[k] = p.s1.indexOf(k) < 0; demo.scan2[k] = p.s2.indexOf(k) < 0;
+      $('det-scan1-' + k).checked = demo.scan1[k]; $('det-scan2-' + k).checked = demo.scan2[k];
+    });
+    markPreset(p.id);
+    if (restart) { pending = {}; saveMemory(); goIdle(); }
+  }
+
+  function setupDemo() {
+    $('presets').innerHTML = PRESETS.map(function (p) {
+      return '<button type="button" class="pbtn" data-id="' + p.id + '">' + p.title + '<small>' + p.sub + '</small></button>';
+    }).join('');
+    each($('presets').children, function (b, i) { b.onclick = function () { applyPreset(PRESETS[i], true); }; });
+    buildDetTable();
+    applyPreset(PRESETS[1], false);
+    $('demo-person').onchange = function () { demo.person = this.value; markPreset(null); };
+    $('demo-voice').onchange = function () { demo.voice = this.checked; if (!this.checked && window.speechSynthesis) window.speechSynthesis.cancel(); };
+    $('demo-jump').onchange = function () { jump(this.value); this.value = ''; };
+    $('demo-forget').onclick = function () { pending = {}; saveMemory(); };
+    renderMemory();
+  }
+
+  function missingIn(scan, fallback) {
+    var m = filter(CONFIG.required, function (k) { return !scan[k]; });
+    return m.length ? m : fallback;
+  }
+  function jump(name) {
+    if (!name) return;
+    stopFlow();
+    state = { person: PEOPLE[demo.person] };
+    switch (name) {
+      case 'idle': goIdle(); break;
+      case 'position': start(); break;
+      case 'pass': passScreen(); break;
+      case 'missing': missingScreen(missingIn(demo.scan1, ['gloves'])); break;
+      case 'still': stillScreen(missingIn(demo.scan2, ['helmet']), 2); break;
+      case 'error': fail('demo'); break;
+    }
+  }
+
+  /* ================= boot ================= */
+  var savedLang = null;
+  try { savedLang = localStorage.getItem(LANG_KEY); } catch (e) {}
+  setLang(T[savedLang] ? savedLang : CONFIG.defaultLang);
+  setupDemo();
+  fit();
+  if (!/[?&]demo=1/.test(location.search)) {
+    connectRobot(function (ok) {
+      if (!ok) return;
+      onRobot = true;
+      Backend = HttpBackend;
+      document.body.classList.add('kiosk');
+      fit();
+    });
+  }
+  goIdle();
+})();
+</script>
+</body>
+</html>

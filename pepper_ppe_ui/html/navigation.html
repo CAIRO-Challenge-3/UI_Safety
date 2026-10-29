@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Pepper Wegweiser</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Nunito:wght@400;700;800&display=swap">
+<style>
+/* Standalone directions page for Pepper's tablet, independent of the PPE check (index.html).
+   Layout: fixed 1280x800 stage, scaled to fit; map on the left, steps on the right.
+   Same look as the PPE check: sky #EEF5FF · card #FFFFFF · ink #23305A · soft ink #6B7799
+   coral route #FF7A59 · Pepper-eye blue #4C8DFF · mint goal #2BC48A · sunny #FFB938.
+   Old tablet WebView: ES5, no CSS variables, no grid, no flex gap. */
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: #DDE8F7; color: #23305A; font-family: Nunito, Roboto, 'Segoe UI', Arial, sans-serif; -webkit-user-select: none; user-select: none; }
+.display { font-family: 'Baloo 2', Nunito, 'Arial Rounded MT Bold', sans-serif; }
+
+.wrap {
+  display: flex; align-items: flex-start; padding-top: 24px; padding-bottom: 24px;
+  padding-left: 16px; padding-right: 16px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+#stage-holder { flex: 1; min-width: 0; position: relative; overflow: hidden; border-radius: 26px; margin: 12px; box-shadow: 0 0 0 12px #FFFFFF, 0 24px 60px rgba(35,48,90,.18); }
+#stage {
+  position: absolute; top: 0; left: 0; width: 1280px; height: 800px; overflow: hidden; transform-origin: 0 0;
+  background: #EEF5FF;
+  background-image: radial-gradient(circle at 8% 12%, #FFE9DF 0, rgba(255,233,223,0) 300px),
+                    radial-gradient(circle at 95% 90%, #E2F7EE 0, rgba(226,247,238,0) 360px);
+}
+.panel { width: 260px; flex-shrink: 0; margin-left: 24px; padding: 20px; background: #FFFFFF; border-radius: 20px; font-size: 14px; color: #3B4770; box-shadow: 0 10px 30px rgba(35,48,90,.08); }
+.panel h2 { margin: 0; font-family: 'Baloo 2', Nunito, sans-serif; font-size: 22px; }
+.panel h3 { margin: 16px 0 8px; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: #6B7799; }
+.panel p { margin: 4px 0 0; color: #6B7799; line-height: 1.45; }
+.panel select { width: 100%; padding: 9px 10px; background: #F4F8FF; color: #23305A; border: 2px solid #DCE5F3; border-radius: 12px; font: inherit; }
+.panel select:focus-visible { outline: 3px solid #4C8DFF; outline-offset: 2px; }
+@media (max-width: 900px) {
+  .wrap { flex-direction: column; align-items: stretch; }
+  .panel { width: auto; margin: 20px 0 0; }
+  #stage-holder { border-radius: 14px; box-shadow: 0 0 0 6px #FFFFFF; margin: 6px; }
+}
+body.kiosk { background: #EEF5FF; overflow: hidden; }
+body.kiosk .wrap { padding: 0; }
+body.kiosk .panel { display: none; }
+body.kiosk #stage-holder { margin: 0; border-radius: 0; box-shadow: none; }
+
+.lang { position: absolute; top: 24px; right: 28px; z-index: 5; display: flex; padding: 4px; border-radius: 999px; background: #FFFFFF; box-shadow: 0 4px 12px rgba(35,48,90,.08); }
+.lang button { min-width: 64px; height: 48px; border: 0; border-radius: 999px; background: transparent; color: #6B7799; font: 800 20px Nunito, sans-serif; cursor: pointer; }
+.lang button.on { background: #4C8DFF; color: #FFFFFF; }
+.lang button:focus-visible { outline: 3px solid #FF7A59; outline-offset: 2px; }
+
+.page { position: absolute; top: 0; left: 0; right: 0; bottom: 0; padding: 96px 56px 40px; display: flex; align-items: center; }
+.mapbox { width: 700px; flex-shrink: 0; margin-right: 46px; padding: 14px; background: #FFFFFF; border-radius: 32px; box-shadow: 0 14px 40px rgba(35,48,90,.10); }
+.map { display: block; width: 100%; height: auto; }
+.map text { font-family: Nunito, Roboto, sans-serif; fill: #6B7799; font-size: 15px; font-weight: 800; }
+.dots { animation: march 1.2s linear infinite; }
+@keyframes march { to { stroke-dashoffset: -36; } }
+.goal-pulse { animation: pulse 1.6s ease-out infinite; transform-origin: center; transform-box: fill-box; }
+@keyframes pulse { from { opacity: .7; transform: scale(1); } to { opacity: 0; transform: scale(1.5); } }
+.col { flex: 1; min-width: 0; }
+.eyebrow { margin: 0 0 6px; font-size: 22px; font-weight: 800; color: #FF7A59; }
+.title { margin: 0; font-size: 50px; line-height: 1.05; font-weight: 800; }
+.route { list-style: none; margin: 22px 0 0; padding: 0; }
+.route li { display: flex; align-items: flex-start; margin-top: 16px; font-size: 23px; line-height: 1.35; font-weight: 700; }
+.route li b { display: inline-block; width: 42px; height: 42px; line-height: 42px; margin-right: 16px; border-radius: 50%; background: #4C8DFF; color: #FFFFFF; text-align: center; flex-shrink: 0; font-size: 21px; }
+.actions { margin-top: 34px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 88px; padding: 0 44px; border: 0; border-radius: 999px; cursor: pointer; font: 800 30px Nunito, Roboto, sans-serif; color: #FFFFFF; background: #FF7A59; box-shadow: 0 7px 0 #E25A3A; position: relative; top: 0; -webkit-tap-highlight-color: transparent; }
+.btn:active { top: 5px; box-shadow: 0 2px 0 #E25A3A; }
+.btn:focus-visible { outline: 4px solid #4C8DFF; outline-offset: 6px; }
+.btn[disabled] { opacity: .6; }
+
+@media (prefers-reduced-motion: reduce) { *, *:before, *:after { animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="stage-holder">
+    <div id="stage">
+      <div class="lang" id="lang" role="group" aria-label="Sprache / Language">
+        <button type="button" data-lang="de">DE</button><button type="button" data-lang="en">EN</button>
+      </div>
+      <div class="page">
+        <div class="mapbox">
+          <svg class="map" id="map" viewBox="0 0 600 380" aria-label="Map">
+            <defs><pattern id="stripes" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="14" fill="#FFB938" opacity=".35"/></pattern></defs>
+            <rect x="8" y="8" width="584" height="364" rx="24" fill="#F4F8FF"/>
+            <rect x="232" y="10" width="36" height="360" fill="url(#stripes)"/>
+            <text x="250" y="250" text-anchor="middle" transform="rotate(-90 250 250)" data-t="mapForklift"></text>
+            <rect x="110" y="30" width="100" height="56" rx="16" fill="#E3EBF8"/><text x="160" y="63" text-anchor="middle" data-t="mapPPE"></text>
+            <rect x="300" y="30" width="130" height="56" rx="16" fill="#E3EBF8"/><text x="365" y="63" text-anchor="middle" data-t="mapBriefing"></text>
+            <rect x="110" y="160" width="100" height="150" rx="16" fill="#E3EBF8"/><text x="160" y="240" text-anchor="middle" data-t="mapLineA"></text>
+            <rect x="300" y="150" width="270" height="200" rx="16" fill="#E3EBF8"/><text x="435" y="300" text-anchor="middle" data-t="mapLineB"></text>
+            <rect id="goal-pulse" class="goal-pulse" x="440" y="160" width="80" height="56" rx="16" fill="none" stroke="#2BC48A" stroke-width="5"/>
+            <rect id="goal" x="440" y="160" width="80" height="56" rx="16" fill="#2BC48A"/>
+            <text id="goal-label" x="480" y="193" text-anchor="middle" style="fill:#FFFFFF"></text>
+            <polyline id="route-dots" class="dots" points="" fill="none" stroke="#FFC2B0" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="1 17"/>
+            <g id="arrows"></g>
+            <circle cx="70" cy="330" r="14" fill="#4C8DFF" stroke="#FFFFFF" stroke-width="6"/>
+            <text x="94" y="350" style="fill:#23305A" data-t="mapHere"></text>
+          </svg>
+        </div>
+        <div class="col">
+          <p class="eyebrow" data-t="eyebrow"></p>
+          <h1 class="title display" id="title"></h1>
+          <ol class="route" id="steps"></ol>
+          <div class="actions"><button class="btn" id="btn-walk" type="button"></button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <aside class="panel">
+    <h2>Demo</h2>
+    <p>Standalone directions page. Pick a destination to see its route. Hidden on the robot.</p>
+    <h3>Destination</h3>
+    <select id="demo-zone"></select>
+  </aside>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ================= configuration ================= */
+  var CONFIG = {
+    defaultLang: 'de',
+    zone: 'line-b-bay4',          // or pass ?zone=briefing in the URL
+    arrowGap: 44,                 // map units between arrows on the route
+    arrowSpeed: 26                // map units per second
+  };
+
+  var T = {
+    de: { eyebrow: 'Heute bist du hier:', walkBtn: 'Bring mich hin', walking: 'Folge mir!',
+          mapForklift: 'Staplerkreuzung', mapPPE: 'PSA-Station', mapBriefing: 'Treffpunkt', mapLineA: 'Linie A', mapLineB: 'Linie B', mapHere: 'Du + Pepper seid hier',
+          sayNav: 'Heute bist du bei {zone}. Folge einfach den Pfeilen auf der Karte. Viel Spaß!', sayWalk: 'Okay, folge mir! Ich gehe langsam.' },
+    en: { eyebrow: 'Today you\'re at', walkBtn: 'Walk me there', walking: 'Follow me!',
+          mapForklift: 'forklift crossing', mapPPE: 'PPE station', mapBriefing: 'Briefing point', mapLineA: 'Line A', mapLineB: 'Line B', mapHere: 'You + Pepper are here',
+          sayNav: 'Today you\'re at {zone}. Just follow the arrows on the map. Have fun!', sayWalk: 'Okay, follow me! I\'ll go slowly.' }
+  };
+
+  var ZONES = {
+    'line-b-bay4': {
+      route: [[70, 330], [70, 120], [480, 120], [480, 160]], goal: [440, 160, 80, 56],
+      de: { title: 'Montagelinie B · Platz 4', say: 'Montagelinie B, Platz 4', label: 'Platz 4',
+            steps: ['Geh etwa 25 m geradeaus den Gehweg entlang.', 'Bieg rechts ab. Halte an der Staplerkreuzung an und schau in beide Richtungen.', 'Noch 30 m weiter. Platz 4 ist rechts.'] },
+      en: { title: 'Assembly Line B · Bay 4', say: 'Assembly Line B, Bay 4', label: 'Bay 4',
+            steps: ['Walk straight ahead along the walkway, about 25 m.', 'Turn right. Pause at the forklift crossing and look both ways.', 'Keep going 30 m. Bay 4 is on your right.'] }
+    },
+    briefing: {
+      route: [[70, 330], [70, 120], [365, 120], [365, 86]], goal: [300, 30, 130, 56],
+      de: { title: 'Schicht-Treffpunkt', say: 'dem Schicht-Treffpunkt', label: 'Treffpunkt',
+            steps: ['Geh etwa 25 m geradeaus den Gehweg entlang.', 'Bieg rechts ab. Halte an der Staplerkreuzung an und schau in beide Richtungen.', 'Der Treffpunkt ist links. Deine Schichtleitung wartet dort.'] },
+      en: { title: 'Shift briefing point', say: 'the shift briefing point', label: 'Briefing',
+            steps: ['Walk straight ahead along the walkway, about 25 m.', 'Turn right. Pause at the forklift crossing and look both ways.', 'The briefing point is on your left. Your supervisor will meet you there.'] }
+    },
+    'line-a': {
+      route: [[70, 330], [70, 235], [110, 235]], goal: [110, 160, 100, 150],
+      de: { title: 'Montagelinie A', say: 'Montagelinie A', label: '',
+            steps: ['Geh etwa 10 m geradeaus.', 'Linie A ist direkt rechts von dir.'] },
+      en: { title: 'Assembly Line A', say: 'Assembly Line A', label: '',
+            steps: ['Walk straight ahead, about 10 m.', 'Line A is right there on your right.'] }
+    }
+  };
+
+  /* ================= helpers ================= */
+  var LANG = CONFIG.defaultLang, zoneId = CONFIG.zone;
+  function $(id) { return document.getElementById(id); }
+  function each(a, fn) { for (var i = 0; i < a.length; i++) fn(a[i], i); }
+  function t(key, v) { return T[LANG][key].replace(/\{(\w+)\}/g, function (m, k) { return v && v[k] != null ? v[k] : ''; }); }
+  var SVGNS = 'http://www.w3.org/2000/svg';
+
+  /* ================= robot (optional) ================= */
+  var Robot = { speech: null, tts: null, memory: null };
+  function then(p, fn) { if (p && p.then) p.then(fn); else if (p && p.done) p.done(fn); }
+  function connectRobot(done) {
+    var finished = false;
+    function finish(ok) { if (!finished) { finished = true; done(ok); } }
+    var s = document.createElement('script');
+    s.src = '/libs/qimessaging/2/qimessaging.js';
+    s.onload = function () {
+      if (!window.QiSession) return finish(false);
+      window.QiSession(function (session) {
+        then(session.service('ALAnimatedSpeech'), function (x) { Robot.speech = x; });
+        then(session.service('ALTextToSpeech'), function (x) { Robot.tts = x; x.setLanguage(LANG === 'de' ? 'German' : 'English'); });
+        then(session.service('ALMemory'), function (x) { Robot.memory = x; });
+        finish(true);
+      }, function () { finish(false); });
+    };
+    s.onerror = function () { finish(false); };
+    document.head.appendChild(s);
+    setTimeout(function () { finish(false); }, 2500);
+  }
+  function say(text) {
+    if (Robot.speech) Robot.speech.say('\\vct=115\\ ' + text);
+  }
+
+  /* ================= route + moving arrows ================= */
+  var route = [], segs = [], total = 0, arrows = [];
+
+  function buildRoute(pts) {
+    route = pts; segs = []; total = 0;
+    for (var i = 1; i < pts.length; i++) {
+      var dx = pts[i][0] - pts[i - 1][0], dy = pts[i][1] - pts[i - 1][1], len = Math.sqrt(dx * dx + dy * dy);
+      segs.push({ x: pts[i - 1][0], y: pts[i - 1][1], dx: dx / len, dy: dy / len, len: len, start: total, ang: Math.atan2(dy, dx) * 180 / Math.PI });
+      total += len;
+    }
+    $('route-dots').setAttribute('points', pts.map(function (p) { return p.join(','); }).join(' '));
+    var g = $('arrows');
+    while (g.firstChild) g.removeChild(g.firstChild);
+    arrows = [];
+    var n = Math.ceil(total / CONFIG.arrowGap) + 1;
+    for (var k = 0; k < n; k++) {
+      var a = document.createElementNS(SVGNS, 'path');
+      a.setAttribute('d', 'M-6,-8 L5,0 L-6,8');
+      a.setAttribute('fill', 'none');
+      a.setAttribute('stroke', '#FF7A59');
+      a.setAttribute('stroke-width', '5');
+      a.setAttribute('stroke-linecap', 'round');
+      a.setAttribute('stroke-linejoin', 'round');
+      g.appendChild(a);
+      arrows.push(a);
+    }
+  }
+
+  function at(d) {
+    for (var i = 0; i < segs.length; i++) {
+      var s = segs[i];
+      if (d <= s.start + s.len || i === segs.length - 1) {
+        var u = d - s.start;
+        return { x: s.x + s.dx * u, y: s.y + s.dy * u, ang: s.ang };
+      }
+    }
+  }
+
+  function placeArrows(phase) {
+    each(arrows, function (a, k) {
+      var d = phase + k * CONFIG.arrowGap;
+      if (d < 18 || d > total - 14) { a.setAttribute('opacity', '0'); return; }
+      var p = at(d);
+      a.setAttribute('transform', 'translate(' + p.x.toFixed(1) + ',' + p.y.toFixed(1) + ') rotate(' + p.ang + ')');
+      a.setAttribute('opacity', '1');
+    });
+  }
+
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var raf = window.requestAnimationFrame || function (fn) { return setTimeout(function () { fn(Date.now()); }, 33); };
+  var t0 = null;
+  function loop(ts) {
+    if (t0 === null) t0 = ts;
+    placeArrows(((ts - t0) / 1000 * CONFIG.arrowSpeed) % CONFIG.arrowGap);
+    raf(loop);
+  }
+
+  /* ================= render ================= */
+  function render() {
+    var z = ZONES[zoneId], txt = z[LANG];
+    $('title').textContent = txt.title;
+    $('steps').innerHTML = txt.steps.map(function (s, i) { return '<li><b>' + (i + 1) + '</b><span>' + s + '</span></li>'; }).join('');
+    each(['goal', 'goal-pulse'], function (id) {
+      var r = $(id);
+      r.setAttribute('x', z.goal[0]); r.setAttribute('y', z.goal[1]); r.setAttribute('width', z.goal[2]); r.setAttribute('height', z.goal[3]);
+    });
+    var lbl = $('goal-label');
+    lbl.textContent = txt.label;
+    lbl.setAttribute('x', z.goal[0] + z.goal[2] / 2); lbl.setAttribute('y', z.goal[1] + z.goal[3] / 2 + 5);
+    $('btn-walk').disabled = false;
+    $('btn-walk').textContent = t('walkBtn');
+  }
+
+  function setLang(l) {
+    LANG = l;
+    document.documentElement.lang = l;
+    try { localStorage.setItem('pepper-ppe-lang', l); } catch (e) {}   // same key as the PPE check, so both pages agree
+    each(document.querySelectorAll('[data-t]'), function (el) { el.textContent = t(el.getAttribute('data-t')); });
+    each(document.querySelectorAll('#lang button'), function (b) { b.classList.toggle('on', b.getAttribute('data-lang') === l); });
+    if (Robot.tts) Robot.tts.setLanguage(l === 'de' ? 'German' : 'English');
+    render();
+  }
+
+  function setZone(id) {
+    zoneId = ZONES[id] ? id : CONFIG.zone;
+    buildRoute(ZONES[zoneId].route);
+    render();
+    if (reduce) placeArrows(CONFIG.arrowGap / 2);
+    say(t('sayNav', { zone: ZONES[zoneId][LANG].say }));
+  }
+
+  function fit() {
+    var kiosk = document.body.classList.contains('kiosk'), holder = $('stage-holder');
+    var s = kiosk ? Math.min(window.innerWidth / 1280, window.innerHeight / 800) : Math.min(holder.clientWidth / 1280, 1);
+    $('stage').style.transform = 'scale(' + s + ')';
+    $('stage').style.webkitTransform = 'scale(' + s + ')';
+    holder.style.height = (800 * s) + 'px';
+  }
+
+  /* ================= wiring ================= */
+  each(document.querySelectorAll('#lang button'), function (b) { b.onclick = function () { setLang(b.getAttribute('data-lang')); }; });
+  $('btn-walk').onclick = function () {
+    if (Robot.memory) Robot.memory.raiseEvent('PPECheck/GuideTo', JSON.stringify({ zone: zoneId }));   // hook ALNavigation here
+    this.disabled = true; this.textContent = t('walking');
+    say(t('sayWalk'));
+  };
+  var sel = $('demo-zone');
+  for (var id in ZONES) if (ZONES.hasOwnProperty(id)) { var o = document.createElement('option'); o.value = id; o.textContent = ZONES[id].en.title; sel.appendChild(o); }
+  sel.onchange = function () { setZone(this.value); };
+  window.addEventListener('resize', fit);
+
+  var m = /[?&]zone=([\w-]+)/.exec(location.search);
+  var saved = null;
+  try { saved = localStorage.getItem('pepper-ppe-lang'); } catch (e) {}
+  LANG = T[saved] ? saved : CONFIG.defaultLang;
+  setZone(m ? m[1] : CONFIG.zone);
+  sel.value = zoneId;
+  setLang(LANG);
+  fit();
+  if (!reduce) raf(loop);
+  connectRobot(function (ok) { if (ok) { document.body.classList.add('kiosk'); fit(); } });
+})();
+</script>
+</body>
+</html>
