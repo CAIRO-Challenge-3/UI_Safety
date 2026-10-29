@@ -7,3 +7,9 @@ venv/
 *.log
 # YOLO weights downloaded at runtime (remove this line if you want to commit them)
 *.pt
+
+# Pepper
+pepper_wheels/
+models/helmet_pepper/
+safety/
+!models/helmet-26s.pt
